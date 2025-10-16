@@ -1,11 +1,12 @@
 <odoo>
-    <record id="ir_cron_mollie_retry" model="ir.cron">
-        <field name="name">Retry Failed Mollie Payments</field>
+    <record id="ir_cron_mollie_recurring_payments" model="ir.cron">
+        <field name="name">Mollie Recurring Payment Retry</field>
         <field name="model_id" ref="sale.model_sale_order"/>
         <field name="state">code</field>
         <field name="code">model.cron_retry_failed_mollie_payments()</field>
         <field name="interval_number">1</field>
         <field name="interval_type">days</field>
+        <field name="numbercall">-1</field>
         <field name="active">True</field>
     </record>
 </odoo>

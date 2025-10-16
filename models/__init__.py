@@ -1,1 +1,1 @@
-from . import subscription_recurring
+from . import sale_order

@@ -7,7 +7,7 @@
         Extend Mollie payment integration to support recurring subscriptions,
         auto retries, mandate management, and customer/admin notifications.
     """,
-    'depends': ['payment_mollie', 'website_sale', 'mail'],
+    'depends': ['payment_mollie', 'sale', 'mail'],
     'data': [
         'data/mollie_cron.xml',
         'data/mail_templates.xml',
