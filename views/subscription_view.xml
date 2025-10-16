@@ -1,0 +1,21 @@
+<odoo>
+    <record id="view_subscription_form_mollie" model="ir.ui.view">
+        <field name="name">sale.subscription.form.mollie</field>
+        <field name="model">sale.subscription</field>
+        <field name="inherit_id" ref="sale_subscription.sale_subscription_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form/sheet" position="inside">
+                <group string="Mollie Recurring Info" colspan="2">
+                    <field name="mollie_mandate_id"/>
+                    <field name="mollie_retry_count"/>
+                    <field name="mollie_failure_reason"/>
+                    <field name="mollie_suspended"/>
+                </group>
+                <button name="action_mollie_retry_payment"
+                        type="object"
+                        string="Retry Payment"
+                        class="oe_highlight"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

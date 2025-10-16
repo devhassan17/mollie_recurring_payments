@@ -1,0 +1,30 @@
+<odoo>
+    <!-- Customer failure notice -->
+    <record id="mail_template_mollie_failed_payment" model="mail.template">
+        <field name="name">Mollie Payment Failed</field>
+        <field name="model_id" ref="sale_subscription.model_sale_subscription"/>
+        <field name="subject">Payment failed for your subscription ${object.code}</field>
+        <field name="email_from">${object.company_id.email}</field>
+        <field name="email_to">${object.partner_id.email}</field>
+        <field name="body_html"><![CDATA[
+            <p>Dear ${object.partner_id.name},</p>
+            <p>Your latest subscription payment for <b>${object.code}</b> could not be processed.</p>
+            <p>Reason: ${object.mollie_failure_reason or 'Unknown'}</p>
+            <p>We will automatically retry within 2 days.</p>
+        ]]></field>
+    </record>
+
+    <!-- Admin suspension notice -->
+    <record id="mail_template_mollie_admin_notice" model="mail.template">
+        <field name="name">Admin - Mollie Subscription Suspended</field>
+        <field name="model_id" ref="sale_subscription.model_sale_subscription"/>
+        <field name="subject">Subscription ${object.code} Suspended (Failed Payments)</field>
+        <field name="email_from">${object.company_id.email}</field>
+        <field name="email_to">${object.company_id.email}</field>
+        <field name="body_html"><![CDATA[
+            <p>Admin,</p>
+            <p>The subscription <b>${object.code}</b> for <b>${object.partner_id.name}</b> has been suspended after ${object.mollie_max_retries} failed payment attempts.</p>
+            <p>Last failure reason: ${object.mollie_failure_reason}</p>
+        ]]></field>
+    </record>
+</odoo>
