@@ -14,7 +14,7 @@ class MollieRecurringController(http.Controller):
             [('code', '=', 'mollie')], limit=1
         )
         if not mollie_provider:
-            _logger.error("❌ No Mollie provider found for webhook.")
+            _logger.error("❌ No Mollie provider found.")
             return "provider not found"
 
         mollie_client = mollie_provider._mollie_get_client()
@@ -45,49 +45,51 @@ class MollieRecurringController(http.Controller):
             _logger.error("❌ Sale order %s not found in DB.", order_id)
             return "order not found"
 
-        _logger.info("💳 Mollie webhook received for order %s (status=%s)", order.name, payment.status)
-
-        # ✅ Handle successful payment
+        # ✅ Payment succeeded
         if payment.status == 'paid':
             _logger.info("✅ Payment successful for order %s", order.name)
 
-            # ✅ Fetch valid mandate for this customer
+            # 🔹 Fetch or create Mollie customer
+            if not partner.mollie_customer_id:
+                customer = mollie_client.customers.create({
+                    "name": partner.name,
+                    "email": partner.email,
+                })
+                partner.sudo().write({'mollie_customer_id': customer.id})
+
+            # 🔹 Get mandate
             try:
                 mandates = mollie_client.customer_mandates.list(customer_id=partner.mollie_customer_id)
                 valid_mandates = [m for m in mandates if getattr(m, "status", "") == "valid"]
-
                 if valid_mandates:
                     mandate_id = valid_mandates[0].id
                     partner.sudo().write({'mollie_mandate_id': mandate_id})
                     order.sudo().write({'mollie_mandate_id': mandate_id})
-                    _logger.info("💾 Stored Mollie mandate %s for partner %s and order %s", mandate_id, partner.name, order.name)
-                else:
-                    _logger.warning("⚠️ No valid Mollie mandates found for customer %s", partner.mollie_customer_id)
-
+                    _logger.info("💾 Stored Mollie mandate %s for %s", mandate_id, partner.name)
             except Exception as e:
-                _logger.error("❌ Failed to fetch Mollie mandates for %s: %s", partner.name, e)
+                _logger.error("💥 Failed to fetch mandates for %s: %s", partner.name, e)
 
-            # ✅ Create subscription for recurring products
+            # 🔹 Create subscription if needed
             try:
                 if any(line.product_id.recurring_invoice for line in order.order_line):
                     subscription = order._create_subscriptions()
                     subscription.write({
                         'mollie_mandate_id': order.mollie_mandate_id,
-                        'recurring_next_date': fields.Date.add(fields.Date.today(), months=1)
+                        'recurring_next_date': fields.Date.add(fields.Date.today(), months=1),
                     })
-                    _logger.info("🧾 Subscription %s created with Mollie mandate %s", subscription.code, subscription.mollie_mandate_id)
+                    _logger.info("🧾 Subscription %s created for %s", subscription.code, order.name)
             except Exception as e:
-                _logger.error("⚠️ Failed to create subscription for %s: %s", order.name, e)
+                _logger.error("⚠️ Subscription creation failed: %s", e)
 
-            # Confirm the order
+            # Confirm order
             try:
                 order.action_confirm()
-                _logger.info("📦 Order %s confirmed successfully", order.name)
+                _logger.info("📦 Order %s confirmed", order.name)
             except Exception as e:
-                _logger.error("⚠️ Failed to confirm order %s: %s", order.name, e)
+                _logger.error("⚠️ Order confirmation failed: %s", e)
 
         elif payment.status in ['failed', 'canceled']:
-            _logger.warning("❌ Mollie payment %s for order %s", payment.status, order.name)
             order.sudo().write({'mollie_failure_reason': payment.status})
+            _logger.warning("❌ Mollie payment %s for order %s", payment.status, order.name)
 
         return "ok"
