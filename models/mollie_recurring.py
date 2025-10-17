@@ -2,6 +2,7 @@
 from odoo import models, fields, api
 import logging
 from datetime import timedelta
+from mollie.api.client import Client
 
 _logger = logging.getLogger(__name__)
 
@@ -23,19 +24,20 @@ class SaleOrderRecurring(models.Model):
     mollie_suspended = fields.Boolean(default=False)
     recurring_next_date = fields.Date("Next Recurring Payment Date")
 
-    # -------------------------------
+    # 🔑 Fetch Mollie client from config parameter
+    def _get_mollie_client(self):
+        api_key = self.env['ir.config_parameter'].sudo().get_param('mollie.api_key')
+        if not api_key:
+            _logger.error("❌ Mollie API key not set in System Parameters (key: mollie.api_key)")
+            raise ValueError("Mollie API key not configured in Odoo System Parameters.")
+        mollie_client = Client()
+        mollie_client.set_api_key(api_key)
+        return mollie_client
+
     # 🕒 CRON for Recurring Payments
-    # -------------------------------
     @api.model
     def cron_retry_failed_mollie_payments(self):
-        mollie_provider = self.env['payment.provider'].sudo().search(
-            [('code', '=', 'mollie')], limit=1
-        )
-        if not mollie_provider:
-            _logger.error("❌ No Mollie provider configured.")
-            return
-
-        mollie_client = mollie_provider._mollie_get_client()
+        mollie_client = self._get_mollie_client()
 
         orders = self.sudo().search([
             ('mollie_mandate_id', '!=', False),
@@ -87,9 +89,7 @@ class SaleOrderRecurring(models.Model):
                 _logger.error("💥 Mollie error for %s: %s", order.name, e)
                 self._send_failure_email(order)
 
-    # -------------------------------
     # ✉️ Notification Helpers
-    # -------------------------------
     def _send_failure_email(self, order):
         template = self.env.ref('mollie_recurring_payments.mail_template_mollie_failed_payment', raise_if_not_found=False)
         if template:

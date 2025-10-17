@@ -1,43 +1,49 @@
 <odoo>
-    <record id="mail_template_mollie_failed_payment" model="mail.template">
-        <field name="name">Mollie Payment Failed</field>
-        <field name="model_id" ref="sale.model_sale_order"/>
-        <field name="subject">Payment failed for your order ${object.name}</field>
-        <field name="email_from">${object.company_id.email}</field>
-        <field name="email_to">${object.partner_id.email}</field>
-        <field name="body_html" type="html">
-            <p>Dear ${object.partner_id.name},</p>
-            <p>Your payment for order <b>${object.name}</b> could not be processed.</p>
-            <p>Reason: ${object.mollie_failure_reason or 'Unknown'}.</p>
-            <p>We’ll retry your payment automatically within 2 days.</p>
-            <p>Thank you,<br/>${object.company_id.name}</p>
-        </field>
-    </record>
+    <data>
 
-    <record id="mail_template_mollie_success_payment" model="mail.template">
-        <field name="name">Mollie Payment Successful</field>
-        <field name="model_id" ref="sale.model_sale_order"/>
-        <field name="subject">Payment successful for order ${object.name}</field>
-        <field name="email_from">${object.company_id.email}</field>
-        <field name="email_to">${object.partner_id.email}</field>
-        <field name="body_html" type="html">
-            <p>Dear ${object.partner_id.name},</p>
-            <p>We’ve successfully processed your recurring payment for order <b>${object.name}</b>.</p>
-            <p>Thank you for your continued support!</p>
-            <p>— ${object.company_id.name}</p>
-        </field>
-    </record>
+        <record id="mail_template_mollie_failed_payment" model="mail.template">
+            <field name="name">Mollie Payment Failed</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="subject">Payment Failed for Order ${object.name}</field>
+            <field name="email_from">${(object.company_id.email or 'info@company.com')}</field>
+            <field name="email_to">${object.partner_id.email}</field>
+            <field name="body_html">
+                <![CDATA[
+                <p>Hello ${object.partner_id.name},</p>
+                <p>Your recurring payment for order <b>${object.name}</b> has failed.</p>
+                <p>We’ll retry automatically. Please ensure your payment method is valid.</p>
+                ]]>
+            </field>
+        </record>
 
-    <record id="mail_template_mollie_admin_notice" model="mail.template">
-        <field name="name">Admin Notice: Mollie Payment Failed</field>
-        <field name="model_id" ref="sale.model_sale_order"/>
-        <field name="subject">Subscription suspended after multiple failed payments (${object.name})</field>
-        <field name="email_from">${object.company_id.email}</field>
-        <field name="email_to">${object.company_id.email}</field>
-        <field name="body_html" type="html">
-            <p>Order <b>${object.name}</b> has been suspended after multiple failed Mollie payment retries.</p>
-            <p>Customer: ${object.partner_id.name} (${object.partner_id.email})</p>
-            <p>Failure reason: ${object.mollie_failure_reason or 'Unknown'}.</p>
-        </field>
-    </record>
+        <record id="mail_template_mollie_success_payment" model="mail.template">
+            <field name="name">Mollie Payment Success</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="subject">Payment Successful for Order ${object.name}</field>
+            <field name="email_from">${(object.company_id.email or 'info@company.com')}</field>
+            <field name="email_to">${object.partner_id.email}</field>
+            <field name="body_html">
+                <![CDATA[
+                <p>Hello ${object.partner_id.name},</p>
+                <p>Your recurring payment for order <b>${object.name}</b> was successful!</p>
+                <p>Thank you for staying with us.</p>
+                ]]>
+            </field>
+        </record>
+
+        <record id="mail_template_mollie_admin_notice" model="mail.template">
+            <field name="name">Mollie Admin Notice</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="subject">Recurring Payment Suspended: ${object.name}</field>
+            <field name="email_from">${(object.company_id.email or 'info@company.com')}</field>
+            <field name="email_to">${(object.company_id.email or 'admin@company.com')}</field>
+            <field name="body_html">
+                <![CDATA[
+                <p>Admin,</p>
+                <p>The recurring payment for order <b>${object.name}</b> has been suspended after multiple failed attempts.</p>
+                ]]>
+            </field>
+        </record>
+
+    </data>
 </odoo>
