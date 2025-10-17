@@ -11,7 +11,7 @@
     'data': [
         'data/mollie_cron.xml',
         'data/mail_templates.xml',
-        'views/subscription_view.xml',
+        'views/mollie_views.xml',
     ],
     'license': 'LGPL-3',
     'installable': True,
