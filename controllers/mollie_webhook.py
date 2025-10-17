@@ -39,7 +39,6 @@ class MollieRecurringController(http.Controller):
 
         if payment.status == 'paid':
             _logger.info("✅ Mollie webhook: Payment successful for order %s", order.name)
-
             try:
                 mandates = mollie_client.customer_mandates.list(partner.mollie_customer_id)
                 valid_mandates = [m for m in mandates if m['status'] == 'valid']
