@@ -1,1 +1,1 @@
-from . import mollie_recurring
+from . import res_partner
