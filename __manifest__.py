@@ -1,6 +1,6 @@
 {
     'name': 'mollie_recurring_payments',
-    'version': '1.0',
+    'version': '1.1',
     'category': 'Accounting/Payment',
     'summary': 'Enable recurring payments via Mollie for subscriptions with auto-retry and email alerts',
     'description': """
