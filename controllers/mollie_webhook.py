@@ -1,67 +1,61 @@
-# -*- coding: utf-8 -*-
-from odoo import http, fields
-from odoo.http import request
-from mollie.api.client import Client
 import logging
+import requests
+from odoo import http
+from odoo.http import request
 
 _logger = logging.getLogger(__name__)
 
-class MollieRecurringController(http.Controller):
+class MollieRecurringWebhook(http.Controller):
 
-    @http.route('/mollie/webhook', type='http', auth='public', csrf=False)
-    def mollie_webhook(self, **post):
-        api_key = request.env['ir.config_parameter'].sudo().get_param('mollie.api_key')
-        if not api_key:
-            _logger.error("❌ Mollie API key not configured.")
-            return "API key missing"
+    @http.route("/mollie/recurring/webhook", auth="public", methods=["POST"], csrf=False)
+    def mollie_recurring_webhook(self, **post):
+        """Triggered after Mollie payment confirmation."""
+        _logger.info("🌐 Mollie recurring webhook received.")
+        _logger.debug(f"📦 Webhook payload: {post}")
 
-        mollie_client = Client()
-        mollie_client.set_api_key(api_key)
-
-        payment_id = post.get('id')
+        payment_id = post.get("id")
         if not payment_id:
-            return "missing payment id"
+            _logger.error("❌ No payment ID found in webhook payload.")
+            return "no id", 400
 
-        try:
-            payment = mollie_client.payments.get(payment_id)
-        except Exception as e:
-            _logger.error("Error fetching Mollie payment %s: %s", payment_id, e)
-            return "error"
+        mollie_key = request.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
+        if not mollie_key:
+            _logger.error("❌ Mollie API key missing in system parameters.")
+            return "api key missing", 400
 
-        metadata = payment.metadata or {}
-        order_id = metadata.get("order_id")
-        if not order_id:
-            _logger.warning("No order_id found in Mollie payment metadata.")
-            return "missing order id"
+        headers = {"Authorization": f"Bearer {mollie_key}"}
+        payment_url = f"https://api.mollie.com/v2/payments/{payment_id}"
 
-        order = request.env['sale.order'].sudo().browse(int(order_id))
-        partner = order.partner_id
+        _logger.debug(f"📡 Fetching payment details from Mollie API: {payment_url}")
+        r = requests.get(payment_url, headers=headers)
 
-        if payment.status == 'paid':
-            _logger.info("✅ Mollie webhook: Payment successful for order %s", order.name)
-            try:
-                mandates = mollie_client.customer_mandates.list(partner.mollie_customer_id)
-                valid_mandates = [m for m in mandates if m['status'] == 'valid']
-                if valid_mandates:
-                    partner.mollie_mandate_id = valid_mandates[0]['id']
-                    order.mollie_mandate_id = valid_mandates[0]['id']
-                    _logger.info("Stored Mollie mandate %s for %s", valid_mandates[0]['id'], partner.name)
-                else:
-                    _logger.warning("No valid mandates found for customer %s", partner.mollie_customer_id)
-            except Exception as e:
-                _logger.error("Failed to fetch mandates for %s: %s", partner.name, e)
+        if r.status_code != 200:
+            _logger.error(f"❌ Mollie payment fetch failed: {r.status_code} - {r.text}")
+            return "fail", 400
 
-            order.action_confirm()
+        data = r.json()
+        _logger.info(f"✅ Mollie payment fetched successfully for payment ID={payment_id}")
 
-            # create subscription if product is recurring
-            if any(line.product_id.recurring_invoice for line in order.order_line):
-                subscription = order._create_subscriptions()
-                subscription.mollie_mandate_id = order.mollie_mandate_id
-                subscription.recurring_next_date = fields.Date.add(fields.Date.today(), months=1)
-                _logger.info("Subscription %s created with Mollie mandate %s", subscription.code, subscription.mollie_mandate_id)
+        customer_id = data.get("customerId")
+        mandate_id = data.get("mandateId")
 
-        elif payment.status in ['failed', 'canceled']:
-            order.mollie_failure_reason = payment.status
-            _logger.warning("⚠️ Mollie webhook: Payment %s for order %s", payment.status, order.name)
+        _logger.debug(f"👤 Customer ID: {customer_id}, 🧾 Mandate ID: {mandate_id}")
 
-        return "ok"
+        if not (customer_id and mandate_id):
+            _logger.warning("⚠️ No customer or mandate ID in payment response.")
+            return "no customer/mandate", 200
+
+        partner = (
+            request.env["res.partner"]
+            .sudo()
+            .search([("mollie_customer_id", "=", customer_id)], limit=1)
+        )
+
+        if partner:
+            _logger.info(f"💾 Updating partner '{partner.name}' with mandate ID {mandate_id}")
+            partner.write({"mollie_mandate_id": mandate_id})
+        else:
+            _logger.warning(f"⚠️ No partner found with Mollie customer ID: {customer_id}")
+
+        _logger.info("✅ Mollie recurring webhook processing complete.")
+        return "ok", 200

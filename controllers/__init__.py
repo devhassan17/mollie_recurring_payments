@@ -1,1 +1,1 @@
-from . import mollie_recurring_controller
+from . import mollie_webhook

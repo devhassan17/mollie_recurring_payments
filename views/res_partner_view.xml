@@ -1,0 +1,15 @@
+<odoo>
+  <record id="view_partner_form_inherit_mollie" model="ir.ui.view">
+    <field name="name">res.partner.form.mollie.recurring</field>
+    <field name="model">res.partner</field>
+    <field name="inherit_id" ref="base.view_partner_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//field[@name='category_id']" position="after">
+        <group string="Mollie Recurring" col="2">
+          <field name="mollie_customer_id" readonly="1"/>
+          <field name="mollie_mandate_id" readonly="1"/>
+        </group>
+      </xpath>
+    </field>
+  </record>
+</odoo>
