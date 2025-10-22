@@ -1,2 +1,2 @@
 from . import res_partner
-from . import mollie_recurring_payment
+from . import payment_transaction
