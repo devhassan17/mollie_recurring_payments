@@ -1,15 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-  <record id="view_partner_form_inherit_mollie" model="ir.ui.view">
-    <field name="name">res.partner.form.mollie.recurring</field>
-    <field name="model">res.partner</field>
-    <field name="inherit_id" ref="base.view_partner_form"/>
-    <field name="arch" type="xml">
-      <xpath expr="//field[@name='category_id']" position="after">
-        <group string="Mollie Recurring" col="2">
-          <field name="mollie_customer_id" readonly="1"/>
-          <field name="mollie_mandate_id" readonly="1"/>
-        </group>
-      </xpath>
-    </field>
-  </record>
+    <record id="view_partner_form_mollie" model="ir.ui.view">
+        <field name="name">res.partner.form.mollie.mandate</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Insert Mollie Mandate Tab -->
+            <notebook position="inside">
+                <page string="Mollie Mandate">
+                    <group>
+                        <field name="mollie_customer_id" readonly="1"/>
+                        <field name="mollie_mandate_id" readonly="1"/>
+                    </group>
+                    <group>
+                        <button name="fetch_mollie_mandate" type="object"
+                                string="🔄 Fetch Mollie Mandate"
+                                class="btn-primary"/>
+                    </group>
+                </page>
+            </notebook>
+
+        </field>
+    </record>
 </odoo>
