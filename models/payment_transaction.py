@@ -1,14 +1,16 @@
-from odoo import models
+from odoo import models, api, _
 
 class PaymentTransaction(models.Model):
-    _inherit = 'payment.transaction'
+    _inherit = "payment.transaction"
 
+    @api.model
     def _set_done(self):
         res = super()._set_done()
-        if self.acquirer_id.provider == 'mollie' and self.sale_order_ids:
-            for order in self.sale_order_ids:
-                order.mollie_transaction_id = self.acquirer_reference
+
+        for tx in self:
+            if tx.provider_id.code == 'mollie' and tx.sale_order_ids:
+                order = tx.sale_order_ids[0]
+                order.mollie_transaction_id = tx.provider_reference
                 order.mollie_payment_status = 'paid'
-                if self.acquirer_reference and self.mandate_id:
-                    order.mollie_mandate_id = self.mandate_id
+                order.message_post(body=_("✅ Mollie payment completed: %s") % tx.provider_reference)
         return res
