@@ -7,11 +7,11 @@
             <field name="inherit_id" ref="sale.view_order_form"/>
             <field name="arch" type="xml">
                 <xpath expr="//sheet" position="before">
-                    <div class="alert alert-info" attrs="{'invisible': [('is_mandate_approved', '=', True)]}">
+                    <div class="alert alert-info" invisible="is_mandate_approved">
                         <strong>Recurring Payments Setup Required</strong><br/>
                         To enable automatic recurring payments, you need to setup a payment mandate first.
                     </div>
-                    <div class="alert alert-success" attrs="{'invisible': [('is_mandate_approved', '=', False)]}">
+                    <div class="alert alert-success" invisible="not is_mandate_approved">
                         <strong>Recurring Payments Active</strong><br/>
                         Payment mandate is approved. Recurring payments will be processed automatically.
                     </div>
@@ -22,17 +22,17 @@
                                options='{"icon": "fa-check", "string": "Mandate Status"}'/>
                         <field name="active_mandate_id" readonly="1"/>
                         <field name="is_recurring_order"/>
-                        <field name="recurrence_interval" attrs="{'invisible': [('is_recurring_order', '=', False)]}"/>
+                        <field name="recurrence_interval" invisible="not is_recurring_order"/>
                         <div class="button-box">
                             <button name="action_create_mollie_mandate" 
                                     type="object" 
                                     class="btn-primary"
-                                    attrs="{'invisible': [('is_mandate_approved', '=', True)]}"
+                                    invisible="is_mandate_approved"
                                     string="Setup iDEAL Mandate"/>
                             <button name="action_create_recurring_payment" 
                                     type="object" 
                                     class="btn-secondary"
-                                    attrs="{'invisible': [('is_mandate_approved', '=', False)]}"
+                                    invisible="not is_mandate_approved"
                                     string="Create Test Recurring Payment"/>
                         </div>
                     </group>
