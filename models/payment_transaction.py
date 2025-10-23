@@ -7,6 +7,45 @@ _logger = logging.getLogger(__name__)
 class PaymentTransaction(models.Model):
     _inherit = "payment.transaction"
 
+
+    def _mollie_prepare_payment_payload(self, values):
+        payload = super()._mollie_prepare_payment_payload(values)
+
+        partner = self.partner_id
+        mollie_key = (
+            self.provider_id.mollie_api_key
+            or self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
+        )
+        headers = {"Authorization": f"Bearer {mollie_key}"}
+
+        # Step 1. Create Mollie Customer (if not exists)
+        if not partner.mollie_customer_id:
+            _logger.info(f"🧾 Creating Mollie customer for {partner.name}")
+            response = requests.post(
+                "https://api.mollie.com/v2/customers",
+                headers=headers,
+                json={
+                    "name": partner.name,
+                    "email": partner.email,
+                    "metadata": {"odoo_partner_id": partner.id},
+                },
+            )
+            if response.status_code == 201:
+                customer_data = response.json()
+                partner.sudo().write({"mollie_customer_id": customer_data["id"]})
+                _logger.info(f"✅ Mollie customer created: {customer_data['id']}")
+            else:
+                _logger.error(f"❌ Mollie customer creation failed: {response.text}")
+
+        # Step 2. Add customer info for mandate creation
+        if partner.mollie_customer_id:
+            payload.update({
+                "sequenceType": "first",
+                "customerId": partner.mollie_customer_id,
+            })
+
+        return payload 
+    
     @api.model
     def _set_done(self):
         res = super()._set_done()
