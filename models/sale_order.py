@@ -20,17 +20,114 @@ class SaleOrder(models.Model):
             return providers.filtered(lambda p: p.code == 'mollie')
         return providers
     
-    def _website_post_payment_complete(self, provider_code, tx_id):
-        """Create mandate automatically after successful payment"""
-        res = super()._website_post_payment_complete(provider_code, tx_id)
+    def _prepare_subscription_payment_values(self, amount, currency):
+        """Prepare values for subscription payment"""
+        self.ensure_one()
+        partner = self.partner_id
+        provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
         
-        if provider_code == 'mollie' and not self.active_mandate_id:
+        # Ensure customer exists in Mollie
+        if not partner.mollie_customer_id:
+            provider._mollie_create_customer(partner)
+            
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        
+        return {
+            'amount': {
+                'currency': currency.name,
+                'value': f"{amount:.2f}"
+            },
+            'customerId': partner.mollie_customer_id,
+            'sequenceType': 'first',  # This is key for subscription setup
+            'method': 'ideal',
+            'description': f"Initial payment for subscription {self.name}",
+            'webhookUrl': f"{base_url}/payment/mollie/webhook",
+            'redirectUrl': f"{base_url}/payment/mollie/return",
+            'metadata': {
+                'order_id': self.id,
+                'is_subscription': True,
+                'partner_id': partner.id,
+            }
+        }
+
+    def _get_transaction_route(self):
+        """Override to add subscription info to Mollie payment"""
+        route = super()._get_transaction_route()
+        
+        if self.is_subscription_order and route.get('provider_code') == 'mollie':
+            route['subscription'] = True
+            
+        return route
+
+    def _mollie_create_recurring_payment(self, provider, amount, description, mandate_id):
+        """Create recurring payment using existing mandate"""
+        self.ensure_one()
+        if not self.is_subscription_order:
+            return super()._mollie_create_recurring_payment(
+                provider, amount, description, mandate_id
+            )
+            
+        partner = self.partner_id
+        if not partner.mollie_customer_id:
+            return False
+            
+        try:
+            mollie = provider._get_mollie_client()
+            payment_data = {
+                'amount': {
+                    'currency': self.currency_id.name,
+                    'value': f"{amount:.2f}"
+                },
+                'customerId': partner.mollie_customer_id,
+                'sequenceType': 'recurring',  # This indicates a recurring payment
+                'mandateId': mandate_id,
+                'description': description,
+                'metadata': {
+                    'order_id': self.id,
+                    'is_subscription': True,
+                    'partner_id': partner.id,
+                }
+            }
+            
+            payment = mollie.payments.create(payment_data)
+            _logger.info(
+                "Created recurring payment %s for subscription order %s",
+                payment['id'], self.name
+            )
+            return payment
+            
+        except Exception as e:
+            _logger.error("Failed to create recurring payment: %s", e)
+            raise UserError(f"Failed to create recurring payment: {str(e)}")
+
+    def _handle_payment_success(self, provider_code, tx_id):
+        """Handle successful payment and setup mandate if needed"""
+        res = super()._handle_payment_success(provider_code, tx_id)
+        
+        if (provider_code == 'mollie' and 
+            self.is_subscription_order and 
+            not self.active_mandate_id):
+                
             tx = self.env['payment.transaction'].browse(tx_id)
             if tx.state == 'done':
                 try:
-                    self._create_mollie_mandate_from_transaction(tx)
+                    # Create mandate from the first payment
+                    mandate = self.env['mollie.mandate'].create({
+                        'mandate_id': tx.provider_reference,  # Mollie payment ID
+                        'customer_id': self.partner_id.mollie_customer_id,
+                        'partner_id': self.partner_id.id,
+                        'method': 'ideal',
+                        'status': 'valid',
+                        'order_id': self.id,
+                        'is_default': True
+                    })
+                    
+                    self.message_post(
+                        body=f"Mandate {mandate.mandate_id} created from subscription payment"
+                    )
+                    
                 except Exception as e:
-                    _logger.error("Failed to create mandate from transaction: %s", str(e))
+                    _logger.error("Failed to create mandate: %s", str(e))
         
         return res
     

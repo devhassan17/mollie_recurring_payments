@@ -7,13 +7,36 @@ _logger = logging.getLogger(__name__)
 class PaymentProvider(models.Model):
     _inherit = 'payment.provider'
     
-    def _get_mollie_client(self):
-        """Get Mollie client instance"""
-        if not self.mollie_api_key:
-            raise ValueError('Mollie API key is not set')
-        client = Client()
-        client.set_api_key(self.mollie_api_key)
-        return client
+    def _mollie_get_client(self):
+        """Get Mollie client instance - using the official module's method"""
+        return self.env['payment.provider']._get_mollie_client()
+    
+    def _get_default_payment_method_id(self, extra_params=None):
+        """Set iDEAL as default method for subscription products"""
+        self.ensure_one()
+        if (extra_params and extra_params.get('subscription') and 
+            self.code == 'mollie'):
+            return 'ideal'
+        return super()._get_default_payment_method_id(extra_params)
+
+    def _process_payment_data(self, payment_data, order=None):
+        """Add subscription-specific data to payment if needed"""
+        if not order or not order.is_subscription_order:
+            return super()._process_payment_data(payment_data)
+            
+        # Only modify Mollie payments for subscription orders
+        if self.code == 'mollie':
+            payment_data.update({
+                'sequenceType': 'first',  # Required for first subscription payment
+                'customerId': order.partner_id.mollie_customer_id,
+                'metadata': {
+                    'is_subscription': True,
+                    'order_id': order.id,
+                    'partner_id': order.partner_id.id,
+                }
+            })
+            
+        return payment_data
     
     @api.model
     def _mollie_create_customer(self, partner):
