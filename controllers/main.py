@@ -111,7 +111,7 @@ class MollieRecurringController(http.Controller):
         
         try:
             # Get payment details from Mollie
-            mollie = provider._get_mollie_client()
+            mollie = provider._mollie_get_client()
             payment_data = mollie.payments.get(payment_id)
             _logger.info("Got payment data: %s", payment_data)
             
