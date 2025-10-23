@@ -105,10 +105,10 @@ class SaleOrder(models.Model):
             }
             
             payment = mollie.payments.create(payment_data)
-            _logger.info(f"Created first payment {payment['id']} for order {self.name}")
+            _logger.info("Created first payment %s for order %s", payment['id'], self.name)
             return payment
         except Exception as e:
-            _logger.error(f"Failed to create first payment: {e}")
+            _logger.error("Failed to create first payment: %s", e)
             raise UserError(f"Failed to create payment: {str(e)}")
     
     def action_create_recurring_payment(self):
@@ -149,7 +149,7 @@ class SaleOrder(models.Model):
         partner = self.partner_id
         
         if not partner.mollie_customer_id:
-            _logger.error(f"No Mollie customer ID for partner {partner.id}")
+            _logger.error("No Mollie customer ID for partner %s", partner.id)
             return False
             
         try:
@@ -172,10 +172,10 @@ class SaleOrder(models.Model):
             }
             
             payment = mollie.payments.create(payment_data)
-            _logger.info(f"Created recurring payment {payment['id']} for order {self.name}")
+            _logger.info("Created recurring payment %s for order %s", payment['id'], self.name)
             return payment
         except Exception as e:
-            _logger.error(f"Failed to create recurring payment: {e}")
+            _logger.error("Failed to create recurring payment: %s", e)
             raise UserError(f"Failed to create recurring payment: {str(e)}")
 
 class ResPartner(models.Model):

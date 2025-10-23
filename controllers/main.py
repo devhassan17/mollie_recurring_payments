@@ -1,6 +1,6 @@
 import json
 import logging
-from odoo import http
+from odoo import http, fields
 from odoo.http import request
 
 _logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class MollieRecurringController(http.Controller):
                     })
                     
             except Exception as e:
-                _logger.error(f"Error verifying mandate payment: {e}")
+                _logger.error("Error verifying mandate payment: %s", e)
                 order.message_post(body=f"Error verifying mandate payment: {str(e)}")
         
         return request.redirect('/')
@@ -66,7 +66,7 @@ class MollieRecurringController(http.Controller):
         """Handle Mollie webhook notifications for recurring payments"""
         try:
             data = json.loads(request.httprequest.data)
-            _logger.info(f"Mollie recurring webhook received: {data}")
+            _logger.info("Mollie recurring webhook received: %s", data)
             
             if data.get('resource') == 'payment':
                 self._handle_payment_webhook(data)
@@ -75,7 +75,7 @@ class MollieRecurringController(http.Controller):
                 
             return 'OK'
         except Exception as e:
-            _logger.error(f"Error processing Mollie webhook: {e}")
+            _logger.error("Error processing Mollie webhook: %s", e)
             return 'ERROR'
     
     def _handle_payment_webhook(self, data):
@@ -105,7 +105,7 @@ class MollieRecurringController(http.Controller):
                         order.message_post(
                             body=f"Recurring payment confirmed via webhook. Payment ID: {payment_id}"
                         )
-                        _logger.info(f"Recurring payment {payment_id} confirmed for order {order.name}")
+                        _logger.info("Recurring payment %s confirmed for order %s", payment_id, order.name)
                         
                         # If this is a recurring payment, create the next order
                         if metadata.get('type') == 'recurring_payment' and order.is_recurring_order:
@@ -115,20 +115,20 @@ class MollieRecurringController(http.Controller):
                         order.message_post(
                             body=f"Recurring payment failed via webhook. Payment ID: {payment_id}. Status: {payment_data['status']}"
                         )
-                        _logger.warning(f"Recurring payment {payment_id} failed for order {order.name}")
+                        _logger.warning("Recurring payment %s failed for order %s", payment_id, order.name)
                         
         except Exception as e:
-            _logger.error(f"Error handling payment webhook: {e}")
+            _logger.error("Error handling payment webhook: %s", e)
     
     def _handle_mandate_webhook(self, data):
         """Handle mandate webhook - this is crucial for recurring payments"""
         mandate_data = data
-        _logger.info(f"Processing mandate webhook: {mandate_data}")
+        _logger.info("Processing mandate webhook: %s", mandate_data)
         
         try:
             mandate = request.env['mollie.mandate'].sudo().create_mandate_from_webhook(mandate_data)
             if mandate:
-                _logger.info(f"Successfully processed mandate webhook for mandate {mandate_data.get('id')}")
+                _logger.info("Successfully processed mandate webhook for mandate %s", mandate_data.get('id'))
                 
                 # If mandate is valid, link it to relevant orders
                 if mandate.status == 'valid' and mandate.partner_id:
@@ -146,19 +146,19 @@ class MollieRecurringController(http.Controller):
                         order.message_post(
                             body=f"Mandate approved and linked to order. Mandate ID: {mandate.mandate_id}"
                         )
-                        _logger.info(f"Linked mandate {mandate.mandate_id} to order {order.name}")
+                        _logger.info("Linked mandate %s to order %s", mandate.mandate_id, order.name)
             else:
-                _logger.warning(f"Failed to process mandate webhook for data: {mandate_data}")
+                _logger.warning("Failed to process mandate webhook for data: %s", mandate_data)
                 
         except Exception as e:
-            _logger.error(f"Error handling mandate webhook: {e}")
+            _logger.error("Error handling mandate webhook: %s", e)
     
     def _create_next_recurring_order(self, order):
         """Create next recurring order when payment is successful"""
         try:
             # Copy the original order
             new_order = order.copy({
-                'name': f"{order.name}-RENEWAL",  # You might want a better naming convention
+                'name': f"{order.name}-RENEWAL",
                 'date_order': fields.Datetime.now(),
                 'is_recurring_order': True,
                 'mollie_mandate_ids': [(6, 0, order.mollie_mandate_ids.ids)]
@@ -177,11 +177,11 @@ class MollieRecurringController(http.Controller):
                 body=f"New recurring order created: {new_order.name}"
             )
             
-            _logger.info(f"Created new recurring order {new_order.name} from {order.name}")
+            _logger.info("Created new recurring order %s from %s", new_order.name, order.name)
             return new_order
             
         except Exception as e:
-            _logger.error(f"Error creating next recurring order: {e}")
+            _logger.error("Error creating next recurring order: %s", e)
             order.message_post(body=f"Failed to create next recurring order: {str(e)}")
             return False
     
@@ -208,7 +208,7 @@ class MollieRecurringController(http.Controller):
                     'error': 'Failed to create mandate setup payment'
                 })
         except Exception as e:
-            _logger.error(f"Error in website mandate setup: {e}")
+            _logger.error("Error in website mandate setup: %s", e)
             return request.render('mollie_recurring.setup_error', {
                 'error': str(e)
             })

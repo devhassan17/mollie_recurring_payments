@@ -41,7 +41,7 @@ class MollieMandate(models.Model):
             ], limit=1)
             
             if not partner:
-                _logger.warning(f"No partner found for Mollie customer {customer_id}")
+                _logger.warning("No partner found for Mollie customer %s", customer_id)
                 return False
                 
             existing_mandate = self.search([('mandate_id', '=', mandate_id)], limit=1)
@@ -50,7 +50,7 @@ class MollieMandate(models.Model):
                     'status': status,
                     'method': method
                 })
-                _logger.info(f"Updated mandate {mandate_id} status to {status}")
+                _logger.info("Updated mandate %s status to %s", mandate_id, status)
                 return existing_mandate
             else:
                 mandate = self.create({
@@ -60,8 +60,8 @@ class MollieMandate(models.Model):
                     'status': status,
                     'method': method
                 })
-                _logger.info(f"Created new mandate {mandate_id} for partner {partner.id}")
+                _logger.info("Created new mandate %s for partner %s", mandate_id, partner.id)
                 return mandate
         except Exception as e:
-            _logger.error(f"Error creating mandate from webhook: {e}")
+            _logger.error("Error creating mandate from webhook: %s", e)
             return False

@@ -1,6 +1,5 @@
 import logging
 from odoo import models, api
-from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -23,8 +22,8 @@ class PaymentProvider(models.Model):
             
             # Store Mollie customer ID on partner
             partner.write({'mollie_customer_id': customer['id']})
-            _logger.info(f"Created Mollie customer {customer['id']} for partner {partner.id}")
+            _logger.info("Created Mollie customer %s for partner %s", customer['id'], partner.id)
             return customer['id']
         except Exception as e:
-            _logger.error(f"Failed to create Mollie customer: {e}")
+            _logger.error("Failed to create Mollie customer: %s", e)
             return False

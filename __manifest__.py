@@ -9,6 +9,7 @@
     """,
     'depends': ['payment_mollie', 'sale_subscription', 'sale', 'mail'],
     'data': [
+        'security/ir.model.access.csv',
         'views/mandate_views.xml',
         'views/payment_provider_views.xml',
         'views/templates.xml',
