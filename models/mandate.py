@@ -13,8 +13,6 @@ class MollieMandate(models.Model):
     partner_id = fields.Many2one('res.partner', string='Customer', required=True)
     method = fields.Selection([
         ('directdebit', 'Direct Debit'),
-        ('creditcard', 'Credit Card'),
-        ('paypal', 'PayPal'),
         ('ideal', 'iDEAL')
     ], string='Payment Method')
     status = fields.Selection([
@@ -22,46 +20,8 @@ class MollieMandate(models.Model):
         ('invalid', 'Invalid'),
         ('pending', 'Pending')
     ], string='Status')
-    is_default = fields.Boolean(string='Default Mandate')
-    created_at = fields.Datetime(string='Created At', default=fields.Datetime.now)
     order_id = fields.Many2one('sale.order', string='Sales Order')
     
-    @api.model
-    def create_mandate_from_webhook(self, webhook_data):
-        """Create or update mandate from Mollie webhook"""
-        try:
-            mandate_id = webhook_data.get('id')
-            customer_id = webhook_data.get('customerId')
-            status = webhook_data.get('status')
-            method = webhook_data.get('method')
-            
-            # Find partner by customer ID
-            partner = self.env['res.partner'].search([
-                ('mollie_customer_id', '=', customer_id)
-            ], limit=1)
-            
-            if not partner:
-                _logger.warning("No partner found for Mollie customer %s", customer_id)
-                return False
-                
-            existing_mandate = self.search([('mandate_id', '=', mandate_id)], limit=1)
-            if existing_mandate:
-                existing_mandate.write({
-                    'status': status,
-                    'method': method
-                })
-                _logger.info("Updated mandate %s status to %s", mandate_id, status)
-                return existing_mandate
-            else:
-                mandate = self.create({
-                    'mandate_id': mandate_id,
-                    'customer_id': customer_id,
-                    'partner_id': partner.id,
-                    'status': status,
-                    'method': method
-                })
-                _logger.info("Created new mandate %s for partner %s", mandate_id, partner.id)
-                return mandate
-        except Exception as e:
-            _logger.error("Error creating mandate from webhook: %s", e)
-            return False
+    _sql_constraints = [
+        ('unique_mandate_id', 'unique(mandate_id)', 'Mandate ID must be unique!')
+    ]

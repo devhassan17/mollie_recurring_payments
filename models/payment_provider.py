@@ -1,4 +1,6 @@
 import logging
+import json
+import requests
 from odoo import models, api, _
 from odoo.exceptions import UserError
 
@@ -7,11 +9,69 @@ _logger = logging.getLogger(__name__)
 class PaymentProvider(models.Model):
     _inherit = 'payment.provider'
     
-    def _mollie_get_client(self):
-        """Get Mollie client instance"""
+    def _create_first_ideal_payment(self, order, return_url=None):
+        """Create first iDEAL payment to setup mandate"""
+        self.ensure_one()
+        if self.state != 'enabled' or self.code != 'mollie':
+            raise UserError(_('Mollie payment provider not properly configured'))
+            
         if not self.mollie_api_key:
             raise UserError(_('Mollie API key is not set'))
-        return self.env['payment.provider']._mollie_make_request(endpoint='', method='GET', sudo=True)
+
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        return_url = return_url or f"{base_url}/payment/mollie/mandate/return"
+        webhook_url = f"{base_url}/payment/mollie/mandate/webhook"
+
+        # Prepare payment data for mandate setup
+        payment_data = {
+            'amount': {
+                'currency': order.currency_id.name,
+                'value': '0.01'  # Minimum amount for mandate setup
+            },
+            'method': 'ideal',
+            'description': f'Mandate setup for {order.name}',
+            'redirectUrl': return_url,
+            'webhookUrl': webhook_url,
+            'customerId': order.partner_id.mollie_customer_id,
+            'sequenceType': 'first',  # This is key for mandate setup
+            'metadata': {
+                'order_id': order.id,
+                'customer_id': order.partner_id.mollie_customer_id,
+                'type': 'mandate_setup'
+            }
+        }
+
+        # Create Mollie customer if not exists
+        if not order.partner_id.mollie_customer_id:
+            customer_data = {
+                'name': order.partner_id.name,
+                'email': order.partner_id.email,
+            }
+            
+            customer_response = requests.post(
+                'https://api.mollie.com/v2/customers',
+                headers={'Authorization': f'Bearer {self.mollie_api_key}'},
+                json=customer_data
+            )
+            
+            if customer_response.status_code != 201:
+                raise UserError(_('Failed to create Mollie customer'))
+                
+            customer = customer_response.json()
+            order.partner_id.write({'mollie_customer_id': customer['id']})
+            payment_data['customerId'] = customer['id']
+
+        # Create the payment
+        payment_response = requests.post(
+            'https://api.mollie.com/v2/payments',
+            headers={'Authorization': f'Bearer {self.mollie_api_key}'},
+            json=payment_data
+        )
+
+        if payment_response.status_code != 201:
+            raise UserError(_('Failed to create mandate setup payment'))
+
+        return payment_response.json()
     
     def _get_default_payment_method_id(self, extra_params=None):
         """Force iDEAL for subscription first payments"""
