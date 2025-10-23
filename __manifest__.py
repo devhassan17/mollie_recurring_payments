@@ -1,6 +1,6 @@
 {
     'name': 'mollie_recurring_payments',
-    'version': '1.9',
+    'version': '2.0',
     'category': 'Accounting/Payment',
     'summary': 'Enable recurring payments via Mollie for subscriptions with auto-retry and email alerts',
     'description': """
@@ -8,7 +8,10 @@
         auto retries, mandate management, and customer/admin notifications.
     """,
     'depends': ['payment_mollie', 'sale', 'mail', 'sale_subscription'],
-    "data": ["views/res_partner_view.xml", "views/sale_order_view.xml", 'data/ir_cron_data.xml'],
-    "application": False,
-    "installable": True,
+    'data': [
+        'views/res_partner_view.xml',
+        'views/mollie_subscription_view.xml',
+    ],
+    'installable': True,
+    'application': False,
 }
