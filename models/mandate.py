@@ -1,7 +1,7 @@
 from odoo import models, fields, api
 import logging
 
-_logger = logging.getLogger.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 class MollieMandate(models.Model):
     _name = 'mollie.mandate'
