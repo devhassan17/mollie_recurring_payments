@@ -7,9 +7,9 @@
             <xpath expr="//sheet/notebook" position="inside">
                 <page string="Mollie Info">
                     <group>
-                        <field name="mollie_transaction_id"/>
+                        <!-- <field name="mollie_transaction_id"/> -->
                         <field name="mollie_mandate_id"/>
-                        <field name="mollie_payment_status"/>
+                        <!-- <field name="mollie_payment_status"/> -->
                     </group>
                 </page>
             </xpath>
