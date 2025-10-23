@@ -12,19 +12,30 @@ class MollieRecurringController(http.Controller):
                 type='http', auth='public', website=True, csrf=False)
     def mollie_recurring_return(self, order_id=None, **kwargs):
         """Handle return from Mollie after iDEAL/mandate setup payment"""
+        order = False
+        _logger.info("[MOLLIE DEBUG] Return URL called with order_id: %s, kwargs: %s", order_id, kwargs)
+        
         if order_id:
             order = request.env['sale.order'].browse(order_id).sudo()
-        else:
+            _logger.info("[MOLLIE DEBUG] Found order from order_id: %s", order.name if order else 'Not found')
+        
+        if not order:
             # Try to find order from transaction reference
-            transaction_reference = kwargs.get('reference')
+            transaction_reference = kwargs.get('ref')  # Mollie uses 'ref' not 'reference'
+            _logger.info("[MOLLIE DEBUG] Looking for transaction with reference: %s", transaction_reference)
+            
             if transaction_reference:
                 transaction = request.env['payment.transaction'].sudo().search([
                     ('reference', '=', transaction_reference)
                 ], limit=1)
-                order = transaction.sale_order_ids and transaction.sale_order_ids[0] or False
-            
+                _logger.info("[MOLLIE DEBUG] Found transaction: %s", transaction.reference if transaction else 'Not found')
+                
+                if transaction and transaction.sale_order_ids:
+                    order = transaction.sale_order_ids[0]
+                    _logger.info("[MOLLIE DEBUG] Found order from transaction: %s", order.name)
+        
         if not order or not order.exists():
-            _logger.error("[MOLLIE DEBUG] Order not found in return URL")
+            _logger.error("[MOLLIE DEBUG] No valid order found in return URL")
             return request.redirect('/')
         
         payment_id = kwargs.get('id')
@@ -71,22 +82,42 @@ class MollieRecurringController(http.Controller):
         
         return request.redirect('/')
     
-    @http.route('/payment/mollie/recurring/webhook', 
+    @http.route(['/payment/mollie/webhook', '/payment/mollie/recurring/webhook'], 
                 type='http', auth='public', methods=['POST'], csrf=False)
     def mollie_recurring_webhook(self, **kwargs):
-        """Handle Mollie webhook notifications for recurring payments"""
+        """Handle Mollie webhook notifications for payments and mandates"""
         try:
-            data = json.loads(request.httprequest.data)
-            _logger.info("Mollie recurring webhook received: %s", data)
+            # Get webhook data
+            _logger.info("[MOLLIE DEBUG] Webhook received with kwargs: %s", kwargs)
             
+            # Check for data in both request.httprequest.data and kwargs
+            data = {}
+            if request.httprequest.data:
+                try:
+                    data = json.loads(request.httprequest.data)
+                except json.JSONDecodeError:
+                    _logger.warning("[MOLLIE DEBUG] Could not parse webhook data as JSON")
+            
+            # Get reference from kwargs if not in data
+            if kwargs.get('ref'):
+                data['ref'] = kwargs.get('ref')
+            if kwargs.get('id'):
+                data['id'] = kwargs.get('id')
+                
+            _logger.info("[MOLLIE DEBUG] Processing webhook data: %s", data)
+            
+            # Handle different webhook types
             if data.get('resource') == 'payment':
                 self._handle_payment_webhook(data)
             elif data.get('resource') == 'mandate':
                 self._handle_mandate_webhook(data)
+            else:
+                # If no resource type, assume it's a payment notification
+                self._handle_payment_webhook(data)
                 
             return 'OK'
         except Exception as e:
-            _logger.error("Error processing Mollie webhook: %s", e)
+            _logger.error("[MOLLIE DEBUG] Error processing webhook: %s", str(e), exc_info=True)
             return 'ERROR'
     
     def _handle_payment_webhook(self, data):
