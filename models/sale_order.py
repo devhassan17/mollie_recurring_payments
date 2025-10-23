@@ -434,11 +434,44 @@ class SaleOrder(models.Model):
             _logger.error("Failed to create recurring payment: %s", e)
             raise UserError(f"Failed to create recurring payment: {str(e)}")
         
-    def action_confirm(self):
-        res = super(SaleOrder, self).action_confirm()
+    @api.depends('order_line.product_id.is_subscription')
+    def _compute_is_subscription_order(self):
+        """Compute whether order contains subscription products"""
         for order in self:
-            if any(line.product_id.subscription_ok for line in order.order_line):
-                self._create_mollie_mandate_for_subscription(order)
+            order.is_recurring_order = any(line.product_id.is_subscription for line in order.order_line)
+
+    @api.model
+    def create(self, vals):
+        """Override create to handle subscription products"""
+        order = super().create(vals)
+        
+        # Check for subscription products and set up Mollie integration
+        if any(line.product_id.is_subscription for line in order.order_line):
+            _logger.info("[MOLLIE DEBUG] Order %s contains subscription products", order.name)
+            order._create_mollie_mandate_for_subscription(order)
+            
+        return order
+        
+    def write(self, vals):
+        """Override write to handle subscription products"""
+        res = super().write(vals)
+        
+        # If order lines are modified, check for subscription products
+        if 'order_line' in vals:
+            for order in self:
+                if any(line.product_id.is_subscription for line in order.order_line):
+                    _logger.info("[MOLLIE DEBUG] Order %s updated with subscription products", order.name)
+                    order._create_mollie_mandate_for_subscription(order)
+                    
+        return res
+
+    def action_confirm(self):
+        """Override confirm to handle subscription products"""
+        res = super().action_confirm()
+        for order in self:
+            if any(line.product_id.is_subscription for line in order.order_line):
+                _logger.info("[MOLLIE DEBUG] Confirming subscription order %s", order.name)
+                order._create_mollie_mandate_for_subscription(order)
         return res
 
 class ResPartner(models.Model):

@@ -8,13 +8,23 @@ _logger = logging.getLogger(__name__)
 
 class MollieRecurringController(http.Controller):
     
-    @http.route('/payment/mollie/recurring/return/<int:order_id>', 
+    @http.route(['/payment/mollie/recurring/return/<int:order_id>', '/payment/mollie/return'], 
                 type='http', auth='public', website=True, csrf=False)
-    def mollie_recurring_return(self, order_id, **kwargs):
-        """Handle return from Mollie after mandate setup payment"""
-        order = request.env['sale.order'].browse(order_id).sudo()
-        
-        if not order.exists():
+    def mollie_recurring_return(self, order_id=None, **kwargs):
+        """Handle return from Mollie after iDEAL/mandate setup payment"""
+        if order_id:
+            order = request.env['sale.order'].browse(order_id).sudo()
+        else:
+            # Try to find order from transaction reference
+            transaction_reference = kwargs.get('reference')
+            if transaction_reference:
+                transaction = request.env['payment.transaction'].sudo().search([
+                    ('reference', '=', transaction_reference)
+                ], limit=1)
+                order = transaction.sale_order_ids and transaction.sale_order_ids[0] or False
+            
+        if not order or not order.exists():
+            _logger.error("[MOLLIE DEBUG] Order not found in return URL")
             return request.redirect('/')
         
         payment_id = kwargs.get('id')
@@ -80,7 +90,7 @@ class MollieRecurringController(http.Controller):
             return 'ERROR'
     
     def _handle_payment_webhook(self, data):
-        """Handle payment webhook for recurring payments"""
+        """Handle payment webhook for recurring payments and mandate creation"""
         payment_id = data.get('id')
         if not payment_id:
             return
@@ -90,8 +100,10 @@ class MollieRecurringController(http.Controller):
         ], limit=1)
         
         if not provider:
-            _logger.error("Mollie payment provider not found for webhook")
+            _logger.error("[MOLLIE DEBUG] Payment provider not found for webhook")
             return
+            
+        _logger.info("[MOLLIE DEBUG] Processing payment webhook for payment %s", payment_id)
             
         try:
             # Get payment details directly from Mollie API
@@ -137,14 +149,28 @@ class MollieRecurringController(http.Controller):
             _logger.error("Error handling payment webhook: %s", e)
     
     def _handle_mandate_webhook(self, data):
-        """Handle mandate webhook - this is crucial for recurring payments"""
+        """Handle mandate webhook for iDEAL and recurring payments setup"""
         mandate_data = data
-        _logger.info("Processing mandate webhook: %s", mandate_data)
+        _logger.info("[MOLLIE DEBUG] Processing mandate webhook: %s", mandate_data)
         
         try:
+            # First, get payment details if this came from an iDEAL payment
+            if mandate_data.get('method') == 'ideal':
+                _logger.info("[MOLLIE DEBUG] Processing iDEAL mandate creation")
+                payment_id = mandate_data.get('payment_id')
+                if payment_id:
+                    provider = request.env['payment.provider'].sudo().search([
+                        ('code', '=', 'mollie')
+                    ], limit=1)
+                    if provider:
+                        mollie = provider._get_mollie_client()
+                        payment = mollie.payments.get(payment_id)
+                        if payment.get('metadata', {}).get('order_id'):
+                            mandate_data['order_id'] = payment['metadata']['order_id']
+            
             mandate = request.env['mollie.mandate'].sudo().create_mandate_from_webhook(mandate_data)
             if mandate:
-                _logger.info("Successfully processed mandate webhook for mandate %s", mandate_data.get('id'))
+                _logger.info("[MOLLIE DEBUG] Successfully created mandate %s", mandate_data.get('id'))
                 
                 # If mandate is valid, link it to relevant orders
                 if mandate.status == 'valid' and mandate.partner_id:
