@@ -40,14 +40,13 @@
             </field>
         </record>
 
-        <!-- Remove or fix the list view inheritance if the parent does not have a <tree> root -->
-        <!-- If you are sure sale.view_order_tree is a tree view, keep this. Otherwise, comment or remove. -->
+        <!-- Fix the list view inheritance xpath -->
         <record id="view_order_list_inherit_mollie" model="ir.ui.view">
             <field name="name">sale.order.list.inherit.mollie</field>
             <field name="model">sale.order</field>
             <field name="inherit_id" ref="sale.view_order_tree"/>
             <field name="arch" type="xml">
-                <xpath expr="/tree" position="inside">
+                <xpath expr="." position="inside">
                     <field name="is_mandate_approved" widget="boolean_button"/>
                     <field name="is_recurring_order"/>
                     <field name="recurrence_interval" optional="hide"/>
