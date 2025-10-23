@@ -13,6 +13,79 @@ class SaleOrder(models.Model):
         string='Mollie Mandates'
     )
     
+    def _website_get_payment_providers(self):
+        providers = super()._website_get_payment_providers()
+        # If it's a recurring order, only show Mollie provider
+        if self.is_recurring_order:
+            return providers.filtered(lambda p: p.code == 'mollie')
+        return providers
+    
+    def _website_post_payment_complete(self, provider_code, tx_id):
+        """Create mandate automatically after successful payment"""
+        res = super()._website_post_payment_complete(provider_code, tx_id)
+        
+        if provider_code == 'mollie' and not self.active_mandate_id:
+            tx = self.env['payment.transaction'].browse(tx_id)
+            if tx.state == 'done':
+                try:
+                    self._create_mollie_mandate_from_transaction(tx)
+                except Exception as e:
+                    _logger.error("Failed to create mandate from transaction: %s", str(e))
+        
+        return res
+    
+    def _create_mollie_mandate_from_transaction(self, transaction):
+        """Create mandate from successful transaction"""
+        provider = transaction.provider_id
+        if provider.code != 'mollie':
+            return False
+            
+        mollie = provider._get_mollie_client()
+        payment = mollie.payments.get(transaction.provider_reference)
+        
+        if payment['sequenceType'] != 'first':
+            payment = mollie.payments.create({
+                'amount': {
+                    'currency': self.currency_id.name,
+                    'value': '0.01'
+                },
+                'customerId': self.partner_id.mollie_customer_id,
+                'sequenceType': 'first',
+                'method': 'ideal',
+                'description': f"Mandate setup for order {self.name}",
+                'metadata': {
+                    'order_id': self.id,
+                    'type': 'first_payment_mandate',
+                    'partner_id': self.partner_id.id,
+                }
+            })
+        
+        # Create or update mandate
+        mandate_data = {
+            'mandate_id': payment['mandateId'],
+            'customer_id': self.partner_id.mollie_customer_id,
+            'partner_id': self.partner_id.id,
+            'method': payment['method'],
+            'status': 'valid',
+            'order_id': self.id,
+            'is_default': True
+        }
+        
+        existing_mandate = self.env['mollie.mandate'].search([
+            ('mandate_id', '=', payment['mandateId'])
+        ], limit=1)
+        
+        if existing_mandate:
+            existing_mandate.write(mandate_data)
+            mandate = existing_mandate
+        else:
+            mandate = self.env['mollie.mandate'].create(mandate_data)
+        
+        self.message_post(
+            body=f"Mandate {mandate.mandate_id} created automatically from website order"
+        )
+        return mandate
+    
     @api.model_create_multi
     def create(self, vals_list):
         """Check for existing valid mandates when creating orders"""
