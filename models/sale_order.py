@@ -13,6 +13,26 @@ class SaleOrder(models.Model):
         string='Mollie Mandates'
     )
     
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Check for existing valid mandates when creating orders"""
+        orders = super().create(vals_list)
+        for order in orders:
+            if order.is_recurring_order and order.partner_id:
+                # Check for existing valid mandates
+                existing_mandate = self.env['mollie.mandate'].search([
+                    ('partner_id', '=', order.partner_id.id),
+                    ('status', '=', 'valid')
+                ], limit=1)
+                if existing_mandate:
+                    # Link the existing mandate to the order
+                    existing_mandate.write({'order_id': order.id})
+                    order.message_post(
+                        body=f"Found existing valid mandate {existing_mandate.mandate_id} "
+                             f"for partner {order.partner_id.name}"
+                    )
+        return orders
+    
     active_mandate_id = fields.Many2one(
         'mollie.mandate',
         string='Active Mandate',
