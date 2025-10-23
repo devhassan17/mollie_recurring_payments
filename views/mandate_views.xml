@@ -30,8 +30,7 @@
                             <group>
                                 <field name="method"/>
                                 <field name="status" widget="radio"/>
-                                <field name="is_default"/>
-                                <field name="created_at"/>
+                                <field name="customer_id"/>
                             </group>
                         </group>
                         <group>
