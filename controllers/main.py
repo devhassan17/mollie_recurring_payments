@@ -1,5 +1,6 @@
 import json
 import logging
+import requests
 from odoo import http, fields
 from odoo.http import request
 
@@ -93,10 +94,25 @@ class MollieRecurringController(http.Controller):
             return
             
         try:
-            mollie = provider._mollie_get_client()
-            payment_data = mollie.payments.get(payment_id)
+            # Get payment details directly from Mollie API
+            api_key = request.env["ir.config_parameter"].sudo().get_param('mollie.api_key_test')
+            if not api_key:
+                api_key = request.env["ir.config_parameter"].sudo().get_param('mollie.api_key_prod')
+            
+            headers = {"Authorization": f"Bearer {api_key}"}
+            resp = requests.get(f"https://api.mollie.com/v2/payments/{payment_id}", headers=headers, timeout=10)
+            
+            if resp.status_code != 200:
+                _logger.error("Failed to fetch payment: %s", resp.text)
+                return
+                
+            payment_data = resp.json()
+            _logger.info("Got payment data: %s", payment_data)
+            
             metadata = payment_data.get('metadata', {})
             order_id = metadata.get('order_id')
+            customer_id = payment_data.get('customerId')
+            mandate_id = payment_data.get('mandateId')
             
             if order_id:
                 order = request.env['sale.order'].sudo().browse(int(order_id))
