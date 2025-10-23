@@ -7,47 +7,56 @@ _logger = logging.getLogger(__name__)
 
 class MollieRecurringController(http.Controller):
     
-    @http.route('/payment/mollie/recurring/return/<int:subscription_id>', 
+    @http.route('/payment/mollie/recurring/return/<int:order_id>', 
                 type='http', auth='public', website=True, csrf=False)
-    def mollie_recurring_return(self, subscription_id, **kwargs):
+    def mollie_recurring_return(self, order_id, **kwargs):
         """Handle return from Mollie after mandate setup payment"""
-        subscription = request.env['sale.subscription'].browse(subscription_id).sudo()
+        order = request.env['sale.order'].browse(order_id).sudo()
         
-        if not subscription.exists():
+        if not order.exists():
             return request.redirect('/')
         
         payment_id = kwargs.get('id')
         if payment_id:
             try:
                 # Verify payment status with Mollie
-                acquirer = request.env['payment.acquirer'].sudo().search([
-                    ('provider', '=', 'mollie')
+                provider = request.env['payment.provider'].sudo().search([
+                    ('code', '=', 'mollie')
                 ], limit=1)
                 
-                mollie = acquirer._mollie_get_client()
+                if not provider:
+                    _logger.error("Mollie payment provider not found")
+                    return request.redirect('/')
+                
+                mollie = provider._mollie_get_client()
                 payment_data = mollie.payments.get(payment_id)
                 
                 if payment_data['status'] in ['paid', 'authorized']:
                     # Payment successful - mandate should be created
-                    subscription.message_post(
+                    order.message_post(
                         body=f"Mandate setup payment successful. Payment ID: {payment_id}. "
                              f"Mandate should be available via webhook shortly."
                     )
+                    
+                    # Mark order as recurring if it was intended to be
+                    if not order.is_recurring_order:
+                        order.write({'is_recurring_order': True})
+                    
                     return request.render('mollie_recurring.mandate_setup_success', {
-                        'subscription': subscription
+                        'order': order
                     })
                 else:
-                    subscription.message_post(
+                    order.message_post(
                         body=f"Mandate setup payment failed. Payment ID: {payment_id}. Status: {payment_data['status']}"
                     )
                     return request.render('mollie_recurring.mandate_setup_failed', {
-                        'subscription': subscription,
+                        'order': order,
                         'status': payment_data['status']
                     })
                     
             except Exception as e:
                 _logger.error(f"Error verifying mandate payment: {e}")
-                subscription.message_post(body=f"Error verifying mandate payment: {str(e)}")
+                order.message_post(body=f"Error verifying mandate payment: {str(e)}")
         
         return request.redirect('/')
     
@@ -78,26 +87,35 @@ class MollieRecurringController(http.Controller):
         provider = request.env['payment.provider'].sudo().search([
             ('code', '=', 'mollie')
         ], limit=1)
-                
+        
+        if not provider:
+            _logger.error("Mollie payment provider not found for webhook")
+            return
+            
         try:
             mollie = provider._mollie_get_client()
             payment_data = mollie.payments.get(payment_id)
             metadata = payment_data.get('metadata', {})
-            subscription_id = metadata.get('subscription_id')
+            order_id = metadata.get('order_id')
             
-            if subscription_id:
-                subscription = request.env['sale.subscription'].sudo().browse(int(subscription_id))
-                if subscription.exists():
+            if order_id:
+                order = request.env['sale.order'].sudo().browse(int(order_id))
+                if order.exists():
                     if payment_data['status'] == 'paid':
-                        subscription.message_post(
+                        order.message_post(
                             body=f"Recurring payment confirmed via webhook. Payment ID: {payment_id}"
                         )
-                        _logger.info(f"Recurring payment {payment_id} confirmed for subscription {subscription.code}")
+                        _logger.info(f"Recurring payment {payment_id} confirmed for order {order.name}")
+                        
+                        # If this is a recurring payment, create the next order
+                        if metadata.get('type') == 'recurring_payment' and order.is_recurring_order:
+                            self._create_next_recurring_order(order)
+                            
                     elif payment_data['status'] == 'failed':
-                        subscription.message_post(
+                        order.message_post(
                             body=f"Recurring payment failed via webhook. Payment ID: {payment_id}. Status: {payment_data['status']}"
                         )
-                        _logger.warning(f"Recurring payment {payment_id} failed for subscription {subscription.code}")
+                        _logger.warning(f"Recurring payment {payment_id} failed for order {order.name}")
                         
         except Exception as e:
             _logger.error(f"Error handling payment webhook: {e}")
@@ -112,24 +130,99 @@ class MollieRecurringController(http.Controller):
             if mandate:
                 _logger.info(f"Successfully processed mandate webhook for mandate {mandate_data.get('id')}")
                 
-                # If mandate is valid, link it to relevant subscription
+                # If mandate is valid, link it to relevant orders
                 if mandate.status == 'valid' and mandate.partner_id:
-                    # Find subscriptions for this partner that need mandates
-                    subscriptions = request.env['sale.subscription'].sudo().search([
+                    # Find orders for this partner that need mandates
+                    orders = request.env['sale.order'].sudo().search([
                         ('partner_id', '=', mandate.partner_id.id),
-                        ('is_mandate_approved', '=', False)
+                        ('is_mandate_approved', '=', False),
+                        ('is_recurring_order', '=', True)
                     ])
                     
-                    for subscription in subscriptions:
-                        subscription.write({
+                    for order in orders:
+                        order.write({
                             'mollie_mandate_ids': [(4, mandate.id)]
                         })
-                        subscription.message_post(
-                            body=f"Mandate approved and linked to subscription. Mandate ID: {mandate.mandate_id}"
+                        order.message_post(
+                            body=f"Mandate approved and linked to order. Mandate ID: {mandate.mandate_id}"
                         )
-                        _logger.info(f"Linked mandate {mandate.mandate_id} to subscription {subscription.code}")
+                        _logger.info(f"Linked mandate {mandate.mandate_id} to order {order.name}")
             else:
                 _logger.warning(f"Failed to process mandate webhook for data: {mandate_data}")
                 
         except Exception as e:
             _logger.error(f"Error handling mandate webhook: {e}")
+    
+    def _create_next_recurring_order(self, order):
+        """Create next recurring order when payment is successful"""
+        try:
+            # Copy the original order
+            new_order = order.copy({
+                'name': f"{order.name}-RENEWAL",  # You might want a better naming convention
+                'date_order': fields.Datetime.now(),
+                'is_recurring_order': True,
+                'mollie_mandate_ids': [(6, 0, order.mollie_mandate_ids.ids)]
+            })
+            
+            # Copy order lines
+            for line in order.order_line:
+                line.copy({
+                    'order_id': new_order.id,
+                })
+            
+            new_order.message_post(
+                body=f"Recurring order created automatically after successful payment. Original order: {order.name}"
+            )
+            order.message_post(
+                body=f"New recurring order created: {new_order.name}"
+            )
+            
+            _logger.info(f"Created new recurring order {new_order.name} from {order.name}")
+            return new_order
+            
+        except Exception as e:
+            _logger.error(f"Error creating next recurring order: {e}")
+            order.message_post(body=f"Failed to create next recurring order: {str(e)}")
+            return False
+    
+    @http.route('/subscription/mandate/setup/<int:order_id>', 
+                type='http', auth='user', website=True)
+    def website_mandate_setup(self, order_id, **kwargs):
+        """Website route for mandate setup"""
+        order = request.env['sale.order'].browse(order_id)
+        
+        if not order.exists() or order.partner_id != request.env.user.partner_id:
+            return request.redirect('/my/orders')
+        
+        # Check if already has mandate
+        if order.is_mandate_approved:
+            return request.redirect('/my/orders')
+        
+        # Create mandate setup payment
+        try:
+            action = order.action_create_mollie_mandate()
+            if action and action.get('url'):
+                return request.redirect(action['url'])
+            else:
+                return request.render('mollie_recurring.setup_error', {
+                    'error': 'Failed to create mandate setup payment'
+                })
+        except Exception as e:
+            _logger.error(f"Error in website mandate setup: {e}")
+            return request.render('mollie_recurring.setup_error', {
+                'error': str(e)
+            })
+    
+    @http.route('/my/recurring-orders', type='http', auth='user', website=True)
+    def my_recurring_orders(self, **kwargs):
+        """Website page showing user's recurring orders"""
+        orders = request.env['sale.order'].search([
+            ('partner_id', '=', request.env.user.partner_id.id),
+            ('is_recurring_order', '=', True),
+            ('state', 'in', ['sale', 'done'])
+        ])
+        
+        return request.render('mollie_recurring.my_recurring_orders', {
+            'orders': orders,
+            'page_name': 'recurring_orders',
+        })

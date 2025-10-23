@@ -1,3 +1,3 @@
 from . import payment_provider
 from . import mandate
-from . import subscription
+from . import sale_order

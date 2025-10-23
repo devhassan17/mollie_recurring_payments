@@ -10,9 +10,10 @@
                                 <i class="fa fa-check-circle fa-3x mb-3"></i>
                                 <h2>Mandate Setup Successful!</h2>
                                 <p>Your iDEAL payment was successful and your mandate has been set up.</p>
-                                <p>You will now be charged automatically for your subscription renewals.</p>
+                                <p>You will now be charged automatically for your recurring orders.</p>
                             </div>
-                            <a href="/my/subscriptions" class="btn btn-primary">View Subscriptions</a>
+                            <a href="/my/orders" class="btn btn-primary">View My Orders</a>
+                            <a href="/my/recurring-orders" class="btn btn-secondary">View Recurring Orders</a>
                         </div>
                     </div>
                 </div>
@@ -30,12 +31,104 @@
                                 <p>There was an issue with your iDEAL payment. Status: <span t-esc="status"/></p>
                                 <p>Please try again or contact support.</p>
                             </div>
-                            <a t-attf-href="/subscription/mandate/setup/{{subscription.id}}" class="btn btn-primary">Try Again</a>
+                            <a t-attf-href="/subscription/mandate/setup/{{order.id}}" class="btn btn-primary">Try Again</a>
+                            <a href="/contactus" class="btn btn-secondary">Contact Support</a>
+                            <a href="/my/orders" class="btn btn-outline-secondary">My Orders</a>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </template>
+
+        <template id="setup_error" name="Mollie Setup Error">
+            <t t-call="website.layout">
+                <div class="container mt-5">
+                    <div class="row">
+                        <div class="col-12 text-center">
+                            <div class="alert alert-danger">
+                                <i class="fa fa-exclamation-triangle fa-3x mb-3"></i>
+                                <h2>Setup Error</h2>
+                                <p>We encountered an error while setting up your mandate:</p>
+                                <p class="font-weight-bold" t-esc="error"/>
+                            </div>
+                            <a href="/my/orders" class="btn btn-primary">Back to My Orders</a>
                             <a href="/contactus" class="btn btn-secondary">Contact Support</a>
                         </div>
                     </div>
                 </div>
             </t>
+        </template>
+
+        <template id="my_recurring_orders" name="My Recurring Orders">
+            <t t-call="website.layout">
+                <div class="container mt-5">
+                    <div class="row">
+                        <div class="col-12">
+                            <h1>My Recurring Orders</h1>
+                            <div t-if="not orders" class="alert alert-info">
+                                <p>You don't have any recurring orders yet.</p>
+                                <a href="/shop" class="btn btn-primary">Go Shopping</a>
+                            </div>
+                            <div t-if="orders" class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Order Reference</th>
+                                            <th>Date</th>
+                                            <th>Total</th>
+                                            <th>Mandate Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr t-foreach="orders" t-as="order">
+                                            <td>
+                                                <a t-attf-href="/my/orders/{{order.id}}">
+                                                    <span t-esc="order.name"/>
+                                                </a>
+                                            </td>
+                                            <td>
+                                                <span t-field="order.date_order"/>
+                                            </td>
+                                            <td>
+                                                <span t-field="order.amount_total"/>
+                                            </td>
+                                            <td>
+                                                <span t-if="order.is_mandate_approved" class="badge badge-success">
+                                                    Active
+                                                </span>
+                                                <span t-else="" class="badge badge-warning">
+                                                    Setup Required
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <a t-if="not order.is_mandate_approved" 
+                                                   t-attf-href="/subscription/mandate/setup/{{order.id}}"
+                                                   class="btn btn-sm btn-primary">
+                                                    Setup Mandate
+                                                </a>
+                                                <a t-attf-href="/my/orders/{{order.id}}"
+                                                   class="btn btn-sm btn-outline-secondary">
+                                                    View Details
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </template>
+
+        <!-- Add a link to recurring orders in the website user menu -->
+        <template id="recurring_orders_menu_link" inherit_id="website_sale.extra_info">
+            <xpath expr="//div[hasclass('o_myorder_wrap')]" position="inside">
+                <a class="dropdown-item" href="/my/recurring-orders">
+                    <i class="fa fa-refresh me-2"></i>Recurring Orders
+                </a>
+            </xpath>
         </template>
     </data>
 </odoo>

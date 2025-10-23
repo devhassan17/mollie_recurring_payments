@@ -1,7 +1,7 @@
 from odoo import models, fields, api
 import logging
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger.getLogger(__name__)
 
 class MollieMandate(models.Model):
     _name = 'mollie.mandate'
@@ -24,7 +24,7 @@ class MollieMandate(models.Model):
     ], string='Status')
     is_default = fields.Boolean(string='Default Mandate')
     created_at = fields.Datetime(string='Created At', default=fields.Datetime.now)
-    subscription_id = fields.Many2one('sale.subscription', string='Subscription')
+    order_id = fields.Many2one('sale.order', string='Sales Order')
     
     @api.model
     def create_mandate_from_webhook(self, webhook_data):
@@ -65,11 +65,3 @@ class MollieMandate(models.Model):
         except Exception as e:
             _logger.error(f"Error creating mandate from webhook: {e}")
             return False
-    
-    def get_valid_mandate(self, partner):
-        """Get valid mandate for partner"""
-        return self.search([
-            ('partner_id', '=', partner.id),
-            ('status', '=', 'valid'),
-            ('method', 'in', ['ideal', 'directdebit'])
-        ], limit=1)
