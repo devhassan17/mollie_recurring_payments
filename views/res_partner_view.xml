@@ -8,10 +8,7 @@
                 <group string="Mollie Recurring Info">
                     <field name="mollie_customer_id" readonly="1"/>
                     <field name="mollie_mandate_id" readonly="1"/>
-                    <button name="fetch_mollie_mandate"
-                            string="Fetch Mollie Mandate"
-                            type="object"
-                            class="oe_highlight"/>
+                    <button name="fetch_mollie_mandate" type="object" string="Fetch Mollie Mandate" class="oe_highlight"/>
                 </group>
             </xpath>
         </field>

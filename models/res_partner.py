@@ -11,43 +11,73 @@ class ResPartner(models.Model):
     mollie_mandate_id = fields.Char("Mollie Mandate ID", readonly=True)
 
 
-    @api.model
-    def fetch_mollie_mandate(self):
-        """Fetch the latest Mollie mandate for this partner"""
-        self.ensure_one()
+    def fetch_mollie_mandate(self, *args):
+        """
+        Fetch or create Mollie customer, then fetch their mandate.
 
-        if not self.mollie_customer_id:
-            _logger.warning("⚠️ No Mollie customer ID for partner %s", self.name)
-            return
+        Accepts *args to be safe when invoked from a button (RPC may pass ids).
+        Operates on self (recordset).
+        """
+        _logger.info("🔔 fetch_mollie_mandate called with args=%s on partners=%s", args, self.ids)
 
         mollie_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
         if not mollie_key:
             _logger.error("❌ Mollie API key not found in system parameters.")
-            return
+            return False
 
-        url = f"https://api.mollie.com/v2/customers/{self.mollie_customer_id}/mandates"
-        headers = {"Authorization": f"Bearer {mollie_key}"}
+        headers = {
+            "Authorization": f"Bearer {mollie_key}",
+            "Content-Type": "application/json",
+        }
 
-        _logger.info("📡 Fetching Mollie mandates for customer %s", self.mollie_customer_id)
-        r = requests.get(url, headers=headers)
-        if r.status_code != 200:
-            _logger.error("❌ Mollie API error: %s", r.text)
-            return
+        for partner in self:
+            try:
+                _logger.info("🔍 Processing Mollie data for partner: %s (ID=%s)", partner.name, partner.id)
 
-        data = r.json()
-        mandates = data.get("_embedded", {}).get("mandates", [])
-        if not mandates:
-            _logger.info("No mandates found for customer %s", self.mollie_customer_id)
-            return
+                # 1) Ensure Mollie customer exists
+                if not partner.mollie_customer_id:
+                    _logger.info("🆕 No Mollie Customer ID for %s. Creating...", partner.name)
+                    payload = {
+                        "name": partner.name or "Unknown Customer",
+                        "email": partner.email or "noemail@example.com",
+                        "metadata": {"odoo_partner_id": partner.id},
+                    }
+                    resp = requests.post("https://api.mollie.com/v2/customers", headers=headers, json=payload, timeout=10)
+                    if resp.status_code in (200, 201):
+                        data = resp.json()
+                        partner.sudo().write({"mollie_customer_id": data["id"]})
+                        _logger.info("✅ Created Mollie customer for %s: %s", partner.name, data["id"])
+                    else:
+                        _logger.error("❌ Failed to create Mollie customer for %s: %s", partner.name, resp.text)
+                        continue  # try next partner
 
-        # Get latest active mandate
-        latest = next((m for m in mandates if m.get("status") == "valid"), None)
-        if latest:
-            mandate_id = latest.get("id")
-            self.mollie_mandate_id = mandate_id
-            _logger.info("✅ Updated %s with mandate ID %s", self.name, mandate_id)
-        else:
-            _logger.info("No valid mandates found for %s", self.name)
+                # 2) Fetch mandates
+                url = f"https://api.mollie.com/v2/customers/{partner.mollie_customer_id}/mandates"
+                _logger.debug("📡 Fetching mandates for %s: %s", partner.name, url)
+                r = requests.get(url, headers=headers, timeout=10)
+                if r.status_code != 200:
+                    _logger.error("❌ Mollie API returned %s for %s: %s", r.status_code, partner.name, r.text)
+                    continue
+
+                data = r.json()
+                mandates = data.get("_embedded", {}).get("mandates", [])
+                _logger.info("✅ Found %s mandates for %s", len(mandates), partner.name)
+
+                valid = [m for m in mandates if m.get("status") == "valid"]
+                if valid:
+                    mandate_id = valid[0]["id"]
+                    partner.sudo().write({"mollie_mandate_id": mandate_id})
+                    _logger.info("💾 Saved mandate for %s: %s", partner.name, mandate_id)
+                else:
+                    _logger.warning("⚠️ No valid mandates found for %s", partner.name)
+
+            except requests.RequestException as e:
+                _logger.error("⚠️ Network / requests error while talking to Mollie for %s: %s", partner.name, e)
+            except Exception as e:
+                _logger.exception("💥 Unexpected error in fetch_mollie_mandate for %s: %s", partner.name, e)
+
+        _logger.info("🎯 Mollie mandate sync complete for partners: %s", self.ids)
+        return True
             
     def create_recurring_payment(self, amount, description):
         """Charge the customer again using their saved mandate."""
