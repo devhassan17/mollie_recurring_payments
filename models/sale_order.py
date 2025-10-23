@@ -1,4 +1,4 @@
-from odoo import models, fields, api, _
+from odoo import models, fields, api
 from odoo.exceptions import UserError
 import logging
 
@@ -13,11 +13,74 @@ class SaleOrder(models.Model):
         string='Mollie Mandates'
     )
     
-    def _get_payment_providers(self):
-        """Override to filter payment providers for subscription orders"""
-        providers = super()._get_payment_providers()
+    mollie_mandate_id = fields.Char("Mollie Mandate ID")
+    is_recurring_order = fields.Boolean("Recurring Order")
+    is_mandate_approved = fields.Boolean("Mandate Approved")
+    
+    @api.model
+    def _create_mollie_mandate_for_subscription(self, order):
+        """Fetch or create Mollie mandate when subscription product is sold"""
+        try:
+            if not order or not order.partner_id:
+                return
+
+            provider = self.env['payment.provider'].sudo().search([('code', '=', 'mollie')], limit=1)
+            if not provider:
+                _logger.warning("Mollie provider not found.")
+                return
+
+            mollie = provider._mollie_get_client()
+            partner = order.partner_id
+
+            # Try to find existing mandate first
+            customer_id = partner.mollie_customer_id
+            if not customer_id:
+                _logger.warning("Partner %s has no Mollie customer id", partner.name)
+                return
+
+            mandates = mollie.customers.get(customer_id).mandates.list()
+            if mandates and mandates['_embedded']['mandates']:
+                active_mandate = next(
+                    (m for m in mandates['_embedded']['mandates'] if m['status'] == 'valid'),
+                    None
+                )
+                if active_mandate:
+                    _logger.info("Existing Mollie mandate found for %s", partner.name)
+                    order.write({
+                        'mollie_mandate_id': active_mandate['id'],
+                        'is_mandate_approved': True,
+                        'is_recurring_order': True
+                    })
+                    return
+
+            # Otherwise, create a new mandate
+            payment_methods = mollie.methods.list()
+            method = next((m['id'] for m in payment_methods if m['id'] == 'directdebit'), None)
+            if not method:
+                _logger.warning("Direct debit method not available on Mollie.")
+                return
+
+            mandate = mollie.customers.create_mandate(customer_id, {
+                'method': method,
+                'consumerName': partner.name,
+                'consumerAccount': partner.bank_ids and partner.bank_ids[0].acc_number or '',
+                'signatureDate': fields.Date.today().strftime('%Y-%m-%d'),
+            })
+
+            order.write({
+                'mollie_mandate_id': mandate['id'],
+                'is_mandate_approved': True,
+                'is_recurring_order': True
+            })
+            _logger.info("✅ Mollie mandate %s created for order %s", mandate['id'], order.name)
+
+        except Exception as e:
+            _logger.error("Error creating Mollie mandate: %s", e)
+            
+    def _website_get_payment_providers(self):
+        providers = super()._website_get_payment_providers()
+        # If it's a recurring order, only show Mollie provider
         if self.is_recurring_order:
-            _logger.info("[MOLLIE DEBUG] Getting payment providers for subscription order %s", self.name)
             return providers.filtered(lambda p: p.code == 'mollie')
         return providers
     
@@ -232,31 +295,15 @@ class SaleOrder(models.Model):
         for order in self:
             order.is_mandate_approved = bool(order.active_mandate_id)
     
-    def action_create_subscription_payment(self):
-        """Create a payment for subscription order"""
+    def action_create_mollie_mandate(self):
+        """Create first Mollie payment to establish mandate"""
         self.ensure_one()
-        if not self.is_recurring_order:
-            raise UserError(_('This action is only available for subscription orders'))
-
-        _logger.info("[MOLLIE DEBUG] Creating subscription payment for order %s", self.name)
+        _logger.info("[MOLLIE DEBUG] Starting mandate creation for order %s", self.name)
         
-        # Create payment transaction
-        values = self._prepare_subscription_payment()
-        transaction = self.env['payment.transaction'].sudo().create(values)
-        
-        _logger.info("[MOLLIE DEBUG] Created payment transaction: %s", transaction)
-        
-        # Process the payment
-        processing_values = transaction._get_processing_values()
-        
-        if processing_values.get('redirect_url'):
-            return {
-                'type': 'ir.actions.act_url',
-                'url': processing_values['redirect_url'],
-                'target': 'self',
-            }
-            
-        return True
+        provider = self.env['payment.provider'].search([
+            ('code', '=', 'mollie')
+        ], limit=1)
+        _logger.info("[MOLLIE DEBUG] Found Mollie provider: %s", bool(provider))
         
         if not provider:
             raise UserError("Mollie payment provider not found. Please install Mollie payments module.")
@@ -283,32 +330,35 @@ class SaleOrder(models.Model):
         
         raise UserError("Failed to create mandate setup payment")
     
-    def _prepare_subscription_payment(self):
-        """Prepare payment data for subscription"""
-        self.ensure_one()
+    def _mollie_create_first_payment(self, provider, amount, description):
+        """Create first payment using Mollie provider"""
+        partner = self.partner_id
         
-        provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
-        if not provider:
-            raise UserError(_('Mollie payment provider not found'))
-            
-        # Get base URL for redirects
+        # Ensure customer exists in Mollie
+        if not partner.mollie_customer_id:
+            provider._mollie_create_customer(partner)
+        
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
         
-        payment_data = {
-            'amount': {
-                'currency': self.currency_id.name,
-                'value': f"{self.amount_total:.2f}"
-            },
-            'description': f"Subscription payment for {self.name}",
-            'redirectUrl': f"{base_url}/payment/mollie/return",
-            'webhookUrl': f"{base_url}/payment/mollie/webhook",
-            'metadata': {
-                'order_id': self.id,
-                'is_subscription': True
-            },
-            'sequenceType': 'first',  # First payment for subscription
-            'method': 'ideal'  # Force iDEAL for first payment
-        }
+        try:
+            mollie = provider._get_mollie_client()
+            payment_data = {
+                'amount': {
+                    'currency': self.currency_id.name,
+                    'value': f"{amount:.2f}"
+                },
+                'customerId': partner.mollie_customer_id,
+                'sequenceType': 'first',
+                'method': 'ideal',
+                'description': description,
+                'redirectUrl': f"{base_url}/payment/mollie/recurring/return/{self.id}",
+                'webhookUrl': f"{base_url}/payment/mollie/recurring/webhook",
+                'metadata': {
+                    'order_id': self.id,
+                    'type': 'first_payment_mandate',
+                    'partner_id': partner.id,
+                }
+            }
             
             payment = mollie.payments.create(payment_data)
             _logger.info("Created first payment %s for order %s", payment['id'], self.name)

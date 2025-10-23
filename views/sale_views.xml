@@ -24,11 +24,11 @@
                         <field name="is_recurring_order"/>
                         <field name="recurrence_interval" invisible="not is_recurring_order"/>
                         <div class="button-box">
-                            <button name="action_create_subscription_payment" 
+                            <button name="action_create_mollie_mandate" 
                                     type="object" 
                                     class="btn-primary"
-                                    attrs="{'invisible': ['|', ('is_recurring_order', '=', False)]}"
-                                    string="Create Subscription Payment"/>
+                                    invisible="is_mandate_approved"
+                                    string="Setup iDEAL Mandate"/>
                             <button name="action_create_recurring_payment" 
                                     type="object" 
                                     class="btn-secondary"

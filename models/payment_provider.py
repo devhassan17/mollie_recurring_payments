@@ -1,26 +1,13 @@
 import logging
-from mollie.api.client import Client
 import json
 import requests
-from odoo import models, api, fields, _
+from odoo import models, api, _
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
 class PaymentProvider(models.Model):
     _inherit = 'payment.provider'
-
-    mollie_api_key = fields.Char(string='Mollie API Key', required_if_provider='mollie', groups='base.group_system')
-    
-    def _get_mollie_client(self):
-        """Get Mollie API client instance"""
-        self.ensure_one()
-        if not self.mollie_api_key:
-            raise UserError(_('Mollie API key is required'))
-            
-        client = Client()
-        client.set_api_key(self.mollie_api_key)
-        return client
     
     def _create_first_ideal_payment(self, order, return_url=None):
         """Create first iDEAL payment to setup mandate"""
