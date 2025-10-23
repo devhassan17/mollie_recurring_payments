@@ -12,75 +12,48 @@ class MollieRecurringController(http.Controller):
                 type='http', auth='public', website=True, csrf=False)
     def mollie_recurring_return(self, order_id=None, **kwargs):
         """Handle return from Mollie after iDEAL/mandate setup payment"""
-        order = False
         _logger.info("[MOLLIE DEBUG] Return URL called with order_id: %s, kwargs: %s", order_id, kwargs)
         
-        if order_id:
-            order = request.env['sale.order'].browse(order_id).sudo()
-            _logger.info("[MOLLIE DEBUG] Found order from order_id: %s", order.name if order else 'Not found')
-        
-        if not order:
-            # Try to find order from transaction reference
-            transaction_reference = kwargs.get('ref')  # Mollie uses 'ref' not 'reference'
-            _logger.info("[MOLLIE DEBUG] Looking for transaction with reference: %s", transaction_reference)
+        try:
+            order = None
             
-            if transaction_reference:
-                transaction = request.env['payment.transaction'].sudo().search([
-                    ('reference', '=', transaction_reference)
-                ], limit=1)
-                _logger.info("[MOLLIE DEBUG] Found transaction: %s", transaction.reference if transaction else 'Not found')
+            # First try to get order from order_id
+            if order_id:
+                order = request.env['sale.order'].browse(order_id).sudo()
+                if order.exists():
+                    _logger.info("[MOLLIE DEBUG] Found order from order_id: %s", order.name)
+                else:
+                    order = None
+                    _logger.info("[MOLLIE DEBUG] Order not found from order_id: %s", order_id)
+            
+            # If no order yet, try to find it from transaction reference
+            if not order:
+                transaction_reference = kwargs.get('ref')  # Mollie uses 'ref' not 'reference'
+                _logger.info("[MOLLIE DEBUG] Looking for transaction with reference: %s", transaction_reference)
                 
-                if transaction and transaction.sale_order_ids:
-                    order = transaction.sale_order_ids[0]
-                    _logger.info("[MOLLIE DEBUG] Found order from transaction: %s", order.name)
-        
-        if not order or not order.exists():
-            _logger.error("[MOLLIE DEBUG] No valid order found in return URL")
+                if transaction_reference:
+                    transaction = request.env['payment.transaction'].sudo().search([
+                        ('reference', '=', transaction_reference)
+                    ], limit=1)
+                    _logger.info("[MOLLIE DEBUG] Found transaction: %s", transaction.reference if transaction else 'Not found')
+                    
+                    if transaction and transaction.sale_order_ids:
+                        order = transaction.sale_order_ids[0]
+                        if order.exists():
+                            _logger.info("[MOLLIE DEBUG] Found order from transaction: %s", order.name)
+                        else:
+                            order = None
+                        
+            if not order:
+                _logger.error("[MOLLIE DEBUG] No valid order found in return URL")
+                return request.redirect('/')
+                
+            return request.redirect('/shop/payment/validate')
+            
+        except Exception as e:
+            _logger.error("[MOLLIE DEBUG] Error in return URL handling: %s", str(e), exc_info=True)
             return request.redirect('/')
         
-        payment_id = kwargs.get('id')
-        if payment_id:
-            try:
-                # Verify payment status with Mollie
-                provider = request.env['payment.provider'].sudo().search([
-                    ('code', '=', 'mollie')
-                ], limit=1)
-                
-                if not provider:
-                    _logger.error("Mollie payment provider not found")
-                    return request.redirect('/')
-                
-                mollie = provider._mollie_get_client()
-                payment_data = mollie.payments.get(payment_id)
-                
-                if payment_data['status'] in ['paid', 'authorized']:
-                    # Payment successful - mandate should be created
-                    order.message_post(
-                        body=f"Mandate setup payment successful. Payment ID: {payment_id}. "
-                             f"Mandate should be available via webhook shortly."
-                    )
-                    
-                    # Mark order as recurring if it was intended to be
-                    if not order.is_recurring_order:
-                        order.write({'is_recurring_order': True})
-                    
-                    return request.render('mollie_recurring.mandate_setup_success', {
-                        'order': order
-                    })
-                else:
-                    order.message_post(
-                        body=f"Mandate setup payment failed. Payment ID: {payment_id}. Status: {payment_data['status']}"
-                    )
-                    return request.render('mollie_recurring.mandate_setup_failed', {
-                        'order': order,
-                        'status': payment_data['status']
-                    })
-                    
-            except Exception as e:
-                _logger.error("Error verifying mandate payment: %s", e)
-                order.message_post(body=f"Error verifying mandate payment: {str(e)}")
-        
-        return request.redirect('/')
     
     @http.route(['/payment/mollie/webhook', '/payment/mollie/recurring/webhook'], 
                 type='http', auth='public', methods=['POST'], csrf=False)
@@ -135,49 +108,106 @@ class MollieRecurringController(http.Controller):
             return
             
         _logger.info("[MOLLIE DEBUG] Processing payment webhook for payment %s", payment_id)
-            
+        
         try:
-            # Get payment details directly from Mollie API
-            api_key = request.env["ir.config_parameter"].sudo().get_param('mollie.api_key_test')
-            if not api_key:
-                api_key = request.env["ir.config_parameter"].sudo().get_param('mollie.api_key_prod')
-            
-            headers = {"Authorization": f"Bearer {api_key}"}
-            resp = requests.get(f"https://api.mollie.com/v2/payments/{payment_id}", headers=headers, timeout=10)
-            
-            if resp.status_code != 200:
-                _logger.error("Failed to fetch payment: %s", resp.text)
-                return
-                
-            payment_data = resp.json()
+            # Get payment details from Mollie
+            mollie = provider._get_mollie_client()
+            payment_data = mollie.payments.get(payment_id)
             _logger.info("Got payment data: %s", payment_data)
             
-            metadata = payment_data.get('metadata', {})
-            order_id = metadata.get('order_id')
+            # Find related transaction and order
+            ref = data.get('ref')
+            if not ref:
+                _logger.error("[MOLLIE DEBUG] No transaction reference found in webhook data")
+                return 'ERROR'
+                
+            transaction = request.env['payment.transaction'].sudo().search([
+                ('reference', '=', ref)
+            ], limit=1)
+            
+            if not transaction or not transaction.sale_order_ids:
+                _logger.error("[MOLLIE DEBUG] No transaction or order found for reference %s", ref)
+                return 'ERROR'
+                
+            order = transaction.sale_order_ids[0]
+            if not order.exists():
+                _logger.error("[MOLLIE DEBUG] Order does not exist for transaction %s", ref)
+                return 'ERROR'
+                
+            # Process payment status
+            status = payment_data.get('status', 'unknown')
             customer_id = payment_data.get('customerId')
             mandate_id = payment_data.get('mandateId')
             
-            if order_id:
-                order = request.env['sale.order'].sudo().browse(int(order_id))
-                if order.exists():
-                    if payment_data['status'] == 'paid':
-                        order.message_post(
-                            body=f"Recurring payment confirmed via webhook. Payment ID: {payment_id}"
-                        )
-                        _logger.info("Recurring payment %s confirmed for order %s", payment_id, order.name)
-                        
-                        # If this is a recurring payment, create the next order
-                        if metadata.get('type') == 'recurring_payment' and order.is_recurring_order:
-                            self._create_next_recurring_order(order)
-                            
-                    elif payment_data['status'] == 'failed':
-                        order.message_post(
-                            body=f"Recurring payment failed via webhook. Payment ID: {payment_id}. Status: {payment_data['status']}"
-                        )
-                        _logger.warning("Recurring payment %s failed for order %s", payment_id, order.name)
-                        
+            if status == 'paid':
+                # Update transaction status
+                transaction.write({
+                    'state': 'done',
+                    'date': fields.Datetime.now(),
+                })
+                order.message_post(
+                    body=f"Payment confirmed via webhook. Payment ID: {payment_id}"
+                )
+                _logger.info("Payment %s confirmed for order %s", payment_id, order.name)
+                
+                # Handle mandate creation for subscription orders
+                if order.is_recurring_order and mandate_id:
+                    mandate_vals = {
+                        'mandate_id': mandate_id,
+                        'customer_id': customer_id,
+                        'partner_id': order.partner_id.id,
+                        'method': payment_data.get('method', 'ideal'),
+                        'status': 'valid',
+                        'order_id': order.id,
+                    }
+                    mandate = request.env['mollie.mandate'].sudo().create(mandate_vals)
+                    order.write({
+                        'mollie_mandate_ids': [(4, mandate.id)],
+                        'is_mandate_approved': True
+                    })
+                    
+                # Create next recurring order if needed
+                if order.is_recurring_order and order.requires_recurring_order:
+                    self._create_next_recurring_order(order)
+                    
+            elif status == 'failed':
+                transaction.write({
+                    'state': 'error',
+                    'state_message': f"Payment failed. Status: {status}"
+                })
+                order.message_post(
+                    body=f"Payment failed via webhook. Payment ID: {payment_id}. Status: {status}"
+                )
+                _logger.warning("Payment %s failed for order %s", payment_id, order.name)
+                
+            elif status == 'canceled':
+                transaction.write({
+                    'state': 'cancel',
+                    'state_message': f"Payment canceled. Status: {status}"
+                })
+                order.message_post(
+                    body=f"Payment canceled via webhook. Payment ID: {payment_id}"
+                )
+                _logger.info("Payment %s canceled for order %s", payment_id, order.name)
+                
+            elif status == 'expired':
+                transaction.write({
+                    'state': 'cancel',
+                    'state_message': f"Payment expired. Status: {status}"
+                })
+                order.message_post(
+                    body=f"Payment expired via webhook. Payment ID: {payment_id}"
+                )
+                _logger.info("Payment %s expired for order %s", payment_id, order.name)
+                
+            else:
+                _logger.warning("Unhandled payment status %s for payment %s", status, payment_id)
+                
+            return 'OK'
+                                
         except Exception as e:
-            _logger.error("Error handling payment webhook: %s", e)
+            _logger.error("[MOLLIE DEBUG] Error handling payment webhook: %s", str(e), exc_info=True)
+            return 'ERROR'
     
     def _handle_mandate_webhook(self, data):
         """Handle mandate webhook for iDEAL and recurring payments setup"""

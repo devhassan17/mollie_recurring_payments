@@ -440,17 +440,18 @@ class SaleOrder(models.Model):
         for order in self:
             order.is_recurring_order = any(line.product_id.is_subscription for line in order.order_line)
 
-    @api.model
-    def create(self, vals):
+    @api.model_create_multi
+    def create(self, vals_list):
         """Override create to handle subscription products"""
-        order = super().create(vals)
+        orders = super().create(vals_list)
         
-        # Check for subscription products and set up Mollie integration
-        if any(line.product_id.is_subscription for line in order.order_line):
-            _logger.info("[MOLLIE DEBUG] Order %s contains subscription products", order.name)
-            order._create_mollie_mandate_for_subscription(order)
+        for order in orders:
+            # Check for subscription products and set up Mollie integration
+            if any(line.product_id.is_subscription for line in order.order_line):
+                _logger.info("[MOLLIE DEBUG] Order %s contains subscription products", order.name)
+                order._create_mollie_mandate_for_subscription(order)
             
-        return order
+        return orders
         
     def write(self, vals):
         """Override write to handle subscription products"""

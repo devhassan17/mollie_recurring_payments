@@ -7,11 +7,11 @@
             <field name="inherit_id" ref="sale.view_order_form"/>
             <field name="arch" type="xml">
                 <xpath expr="//sheet" position="before">
-                    <div class="alert alert-info" invisible="is_mandate_approved">
+                    <div class="alert alert-info" role="alert" invisible="is_mandate_approved">
                         <strong>Recurring Payments Setup Required</strong><br/>
                         To enable automatic recurring payments, you need to setup a payment mandate first.
                     </div>
-                    <div class="alert alert-success" invisible="not is_mandate_approved">
+                    <div class="alert alert-success" role="alert" invisible="not is_mandate_approved">
                         <strong>Recurring Payments Active</strong><br/>
                         Payment mandate is approved. Recurring payments will be processed automatically.
                     </div>
@@ -46,9 +46,10 @@
             <field name="model">sale.order</field>
             <field name="inherit_id" ref="sale.view_order_tree"/>
             <field name="arch" type="xml">
-                <xpath expr="//list" position="inside">
+                <xpath expr="//tree" position="inside">
                     <field name="is_mandate_approved" widget="boolean_button"/>
-                    <field name="is_recurring_order" invisible="1"/>
+                    <field name="is_recurring_order"/>
+                    <field name="recurrence_interval" optional="hide"/>
                 </xpath>
             </field>
         </record>
