@@ -47,18 +47,18 @@ class SaleSubscription(models.Model):
         """Create first Mollie payment to establish mandate"""
         self.ensure_one()
         
-        acquirer = self.env['payment.acquirer'].search([
-            ('provider', '=', 'mollie')
+        provider = self.env['payment.provider'].search([
+            ('code', '=', 'mollie')
         ], limit=1)
         
-        if not acquirer:
-            raise UserError(_("Mollie payment acquirer not found. Please install Mollie payments module."))
+        if not provider:
+            raise UserError(_("Mollie payment provider not found. Please install Mollie payments module."))
         
         # Create first payment for mandate setup
         amount = self.recurring_total or 1.00  # Minimum amount for iDEAL
         description = f"Mandate setup for subscription {self.code}"
         
-        payment_data = acquirer._mollie_create_first_payment(self, amount, description)
+        payment_data = provider._mollie_create_first_payment(self, amount, description)
         
         if payment_data:
             # Store temporary payment reference
@@ -82,14 +82,14 @@ class SaleSubscription(models.Model):
         if not self.active_mandate_id:
             raise UserError(_("No valid mandate found for this subscription. Please setup mandate first."))
         
-        acquirer = self.env['payment.acquirer'].search([
-            ('provider', '=', 'mollie')
+        provider = self.env['payment.provider'].search([
+            ('code', '=', 'mollie')
         ], limit=1)
         
         amount = self.recurring_total
         description = f"Subscription renewal {self.code}"
         
-        payment_data = acquirer._mollie_create_recurring_payment(
+        payment_data = provider._mollie_create_recurring_payment(
             self, 
             amount, 
             description, 
@@ -110,25 +110,6 @@ class SaleSubscription(models.Model):
             }
         
         raise UserError(_("Failed to create recurring payment"))
-    
-    def cron_process_subscription_renewals(self):
-        """Extended cron method to process subscription renewals with Mollie"""
-        super().cron_process_subscription_renewals()
-        
-        # Get subscriptions that need renewal and have Mollie mandates
-        renewing_subscriptions = self.search([
-            ('in_progress', '=', True),
-            ('is_mandate_approved', '=', True),
-            ('recurring_next_date', '<=', fields.Date.today())
-        ])
-        
-        for subscription in renewing_subscriptions:
-            try:
-                subscription.action_create_recurring_payment()
-                _logger.info(f"Processed Mollie renewal for subscription {subscription.code}")
-            except Exception as e:
-                _logger.error(f"Failed to process Mollie renewal for subscription {subscription.code}: {e}")
-                subscription.message_post(body=f"Failed to process recurring payment: {str(e)}")
 
 class ResPartner(models.Model):
     _inherit = 'res.partner'

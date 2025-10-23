@@ -7,12 +7,11 @@
         Enable recurring payments with Mollie iDEAL for subscription products
         Supports mandate creation and automatic recurring charges
     """,
-    'depends': ['payment_mollie', 'sale', 'mail', 'sale_subscription'],
+    'depends': ['payment_mollie', 'sale_subscription'],
     'data': [
-        'security/ir.model.access.csv',
-        'data/data.xml',
         'views/mandate_views.xml',
         'views/subscription_views.xml',
+        'views/payment_provider_views.xml',
         'views/templates.xml',
     ],
     'installable': True,

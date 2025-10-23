@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- This view might not be needed if we're just extending methods -->
+    </data>
+</odoo>

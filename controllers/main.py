@@ -75,12 +75,12 @@ class MollieRecurringController(http.Controller):
         if not payment_id:
             return
             
-        acquirer = request.env['payment.acquirer'].sudo().search([
-            ('provider', '=', 'mollie')
+        provider = request.env['payment.provider'].sudo().search([
+            ('code', '=', 'mollie')
         ], limit=1)
-        
+                
         try:
-            mollie = acquirer._mollie_get_client()
+            mollie = provider._mollie_get_client()
             payment_data = mollie.payments.get(payment_id)
             metadata = payment_data.get('metadata', {})
             subscription_id = metadata.get('subscription_id')
