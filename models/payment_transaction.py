@@ -10,18 +10,18 @@ class PaymentTransaction(models.Model):
 
     def _mollie_prepare_payment_payload(self, values):
         payload = super()._mollie_prepare_payment_payload(values)
-
         partner = self.partner_id
+
         mollie_key = (
             self.provider_id.mollie_api_key
             or self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
         )
         headers = {"Authorization": f"Bearer {mollie_key}"}
 
-        # Step 1. Create Mollie Customer (if not exists)
+        # ✅ Step 1. Create Mollie Customer if not exists
         if not partner.mollie_customer_id:
             _logger.info(f"🧾 Creating Mollie customer for {partner.name}")
-            response = requests.post(
+            resp = requests.post(
                 "https://api.mollie.com/v2/customers",
                 headers=headers,
                 json={
@@ -30,22 +30,25 @@ class PaymentTransaction(models.Model):
                     "metadata": {"odoo_partner_id": partner.id},
                 },
             )
-            if response.status_code == 201:
-                customer_data = response.json()
-                partner.sudo().write({"mollie_customer_id": customer_data["id"]})
-                _logger.info(f"✅ Mollie customer created: {customer_data['id']}")
+            if resp.status_code == 201:
+                data = resp.json()
+                partner.sudo().write({"mollie_customer_id": data["id"]})
+                _logger.info(f"✅ Mollie customer created: {data['id']}")
             else:
-                _logger.error(f"❌ Mollie customer creation failed: {response.text}")
+                _logger.error(f"❌ Mollie customer creation failed: {resp.text}")
 
-        # Step 2. Add customer info for mandate creation
-        if partner.mollie_customer_id:
-            payload.update({
-                "sequenceType": "first",
-                "customerId": partner.mollie_customer_id,
-            })
+        # ✅ Step 2. Use SEPA Direct Debit for recurring subscription
+        payload.update({
+            "method": "directdebit",
+            "sequenceType": "first",  # Required for recurring payments
+            "customerId": partner.mollie_customer_id,
+            "description": f"Initial payment for {self.reference}",
+            "redirectUrl": f"{self.provider_id.get_base_url()}/payment/mollie/return?ref={self.reference}",
+            "webhookUrl": f"{self.provider_id.get_base_url()}/payment/mollie/webhook?ref={self.reference}",
+        })
 
-        return payload 
-    
+        return payload
+
     @api.model
     def _set_done(self):
         res = super()._set_done()
@@ -78,6 +81,17 @@ class PaymentTransaction(models.Model):
                 partner = order.partner_id
                 partner.sudo().write({"mollie_customer_id": customer_id})
                 _logger.info(f"💾 Stored Mollie Customer ID {customer_id} for partner {partner.name}")
+                
+
+                if mandate_resp.status_code == 201:
+                    mandate_data = mandate_resp.json()
+                    mandate_id = mandate_data["id"]
+                    partner.sudo().write({"mollie_mandate_id": mandate_id})
+                    order.sudo().write({"mollie_mandate_id": mandate_id})
+                    _logger.info(f"✅ Created Mollie Mandate: {mandate_id}")
+                else:
+                    _logger.error(f"❌ Mandate creation failed: {mandate_resp.text}")
+
 
             if mandate_id:
                 partner.sudo().write({"mollie_mandate_id": mandate_id})
