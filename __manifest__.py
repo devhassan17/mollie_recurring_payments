@@ -1,21 +1,17 @@
 {
     'name': 'mollie_recurring_payments',
-    'version': '1.2',
+    'version': '1.5',
     'category': 'Payment',
     'summary': 'Recurring payments with Mollie iDEAL for subscriptions',
     'description': """
         Enable recurring payments with Mollie iDEAL for subscription products
         Supports mandate creation and automatic recurring charges
     """,
-    'depends': ['payment_mollie', 'sale_subscription', 'sale', 'mail', 'website_sale'],
-    'data': [
-        'security/ir.model.access.csv',
-        'views/mandate_views.xml',
-        'views/payment_provider_views.xml',
-        'views/templates.xml',
-        'views/sale_views.xml',
+    "depends": ["base", "contacts", "sale_management", "website_sale", "payment_mollie", 'sale_subscription', 'sale'],
+    "data": [
+        "views/res_partner_views.xml",
+        "views/sale_order_views.xml",
     ],
-    'installable': True,
-    'application': False,
-    'license': 'LGPL-3',
+    "installable": True,
+    "application": False,
 }

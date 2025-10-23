@@ -1,3 +1,2 @@
-from . import payment_provider
-from . import mandate
+from . import res_partner
 from . import sale_order
