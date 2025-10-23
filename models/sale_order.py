@@ -433,6 +433,13 @@ class SaleOrder(models.Model):
         except Exception as e:
             _logger.error("Failed to create recurring payment: %s", e)
             raise UserError(f"Failed to create recurring payment: {str(e)}")
+        
+    def action_confirm(self):
+        res = super(SaleOrder, self).action_confirm()
+        for order in self:
+            if any(line.product_id.subscription_ok for line in order.order_line):
+                self._create_mollie_mandate_for_subscription(order)
+        return res
 
 class ResPartner(models.Model):
     _inherit = 'res.partner'
