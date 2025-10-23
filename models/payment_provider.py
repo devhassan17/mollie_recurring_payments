@@ -12,7 +12,9 @@ class PaymentProvider(models.Model):
     def _create_first_ideal_payment(self, order, return_url=None):
         """Create first iDEAL payment to setup mandate"""
         self.ensure_one()
+        _logger.info("[MOLLIE DEBUG] Creating first iDEAL payment for order %s", order.name)
         if self.state != 'enabled' or self.code != 'mollie':
+            _logger.error("[MOLLIE DEBUG] Provider not enabled or not Mollie. State: %s, Code: %s", self.state, self.code)
             raise UserError(_('Mollie payment provider not properly configured'))
             
         if not self.mollie_api_key:

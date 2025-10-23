@@ -234,10 +234,12 @@ class SaleOrder(models.Model):
     def action_create_mollie_mandate(self):
         """Create first Mollie payment to establish mandate"""
         self.ensure_one()
+        _logger.info("[MOLLIE DEBUG] Starting mandate creation for order %s", self.name)
         
         provider = self.env['payment.provider'].search([
             ('code', '=', 'mollie')
         ], limit=1)
+        _logger.info("[MOLLIE DEBUG] Found Mollie provider: %s", bool(provider))
         
         if not provider:
             raise UserError("Mollie payment provider not found. Please install Mollie payments module.")
@@ -275,7 +277,7 @@ class SaleOrder(models.Model):
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
         
         try:
-            mollie = provider._mollie_get_client()
+            mollie = provider._get_mollie_client()
             payment_data = {
                 'amount': {
                     'currency': self.currency_id.name,
