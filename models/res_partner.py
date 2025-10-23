@@ -35,3 +35,5 @@ class ResPartner(models.Model):
                 _logger.info("Stored mandate %s for partner %s", mandate.get("id"), partner.name)
             else:
                 _logger.warning("No valid mandates for partner %s", partner.name)
+                
+
