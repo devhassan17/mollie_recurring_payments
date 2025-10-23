@@ -1,1 +1,1 @@
-from . import mollie_webhook
+from . import main

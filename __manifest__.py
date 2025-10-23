@@ -1,17 +1,21 @@
 {
     'name': 'mollie_recurring_payments',
-    'version': '2.0',
-    'category': 'Accounting/Payment',
-    'summary': 'Enable recurring payments via Mollie for subscriptions with auto-retry and email alerts',
+    'version': '1.2',
+    'category': 'Payment',
+    'summary': 'Recurring payments with Mollie iDEAL for subscriptions',
     'description': """
-        Extend Mollie payment integration to support recurring subscriptions,
-        auto retries, mandate management, and customer/admin notifications.
+        Enable recurring payments with Mollie iDEAL for subscription products
+        Supports mandate creation and automatic recurring charges
     """,
     'depends': ['payment_mollie', 'sale', 'mail', 'sale_subscription'],
     'data': [
-        'views/res_partner_view.xml',
-        'views/mollie_subscription_view.xml',
+        'security/ir.model.access.csv',
+        'data/data.xml',
+        'views/mandate_views.xml',
+        'views/subscription_views.xml',
+        'views/templates.xml',
     ],
     'installable': True,
     'application': False,
+    'license': 'LGPL-3',
 }

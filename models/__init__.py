@@ -1,4 +1,3 @@
-from . import res_partner
-from . import payment_transaction
-from . import mollie_subscription
-from . import sale_order
+from . import payment_acquirer
+from . import mandate
+from . import subscription
