@@ -8,7 +8,7 @@
         auto retries, mandate management, and customer/admin notifications.
     """,
     'depends': ['payment_mollie', 'sale', 'mail', 'sale_subscription'],
-    "data": ["views/res_partner_view.xml", 'data/ir_cron_data.xml'],
+    "data": ["views/res_partner_view.xml", "views/sale_order_view.xml", 'data/ir_cron_data.xml'],
     "application": False,
     "installable": True,
 }
