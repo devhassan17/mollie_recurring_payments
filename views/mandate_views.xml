@@ -1,25 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
-        <record id="view_mollie_mandate_tree" model="ir.ui.view">
-            <field name="name">mollie.mandate.tree</field>
+        <record id="view_mollie_mandate_list" model="ir.ui.view">
+            <field name="name">mollie.mandate.list</field>
             <field name="model">mollie.mandate</field>
             <field name="arch" type="xml">
-                <tree>
+                <list>
                     <field name="mandate_id"/>
                     <field name="partner_id"/>
                     <field name="method"/>
                     <field name="status" widget="badge" 
                            options="{'success': 'valid', 'warning': 'pending', 'danger': 'invalid'}"/>
                     <field name="created_at"/>
-                </tree>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_mollie_mandate_form" model="ir.ui.view">
+            <field name="name">mollie.mandate.form</field>
+            <field name="model">mollie.mandate</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="mandate_id"/>
+                                <field name="customer_id"/>
+                                <field name="partner_id"/>
+                            </group>
+                            <group>
+                                <field name="method"/>
+                                <field name="status" widget="radio"/>
+                                <field name="is_default"/>
+                                <field name="created_at"/>
+                            </group>
+                        </group>
+                        <group string="Order" attrs="{'invisible': [('order_id', '=', False)]}">
+                            <field name="order_id"/>
+                        </group>
+                    </sheet>
+                </form>
             </field>
         </record>
 
         <record id="action_mollie_mandate" model="ir.actions.act_window">
             <field name="name">Mollie Mandates</field>
             <field name="res_model">mollie.mandate</field>
-            <field name="view_mode">tree</field>
+            <field name="view_mode">list,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    No mandates found. Mandates will be created automatically when customers setup recurring payments.
+                </p>
+            </field>
         </record>
 
         <menuitem id="menu_mollie_mandate" 

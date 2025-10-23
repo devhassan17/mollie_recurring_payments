@@ -121,14 +121,5 @@
                 </div>
             </t>
         </template>
-
-        <!-- Add a link to recurring orders in the website user menu -->
-        <template id="recurring_orders_menu_link" inherit_id="website_sale.extra_info">
-            <xpath expr="//div[hasclass('o_myorder_wrap')]" position="inside">
-                <a class="dropdown-item" href="/my/recurring-orders">
-                    <i class="fa fa-refresh me-2"></i>Recurring Orders
-                </a>
-            </xpath>
-        </template>
     </data>
 </odoo>
