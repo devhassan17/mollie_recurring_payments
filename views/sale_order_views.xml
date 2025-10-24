@@ -1,24 +1,23 @@
 <odoo>
     <record id="view_order_form_mollie_details" model="ir.ui.view">
         <field name="name">sale.order.form.mollie.details</field>
-        <field name="model">res.partner</field>
+        <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_order_form"/>
         <field name="arch" type="xml">
             <notebook position="inside">
                 <page string="Mollie Details" name="mollie_details_tab">
                     <group>
                         <group>
-                            <!-- <field name="mollie_payment_id" readonly="1"/> -->
+                            <field name="mollie_payment_id" readonly="1"/>
                             <field name="mollie_customer_id" readonly="1"/>
                             <field name="mollie_mandate_id" readonly="1"/>
                         </group>
-                        <!-- <group>
+                        <group>
                             <field name="mollie_mandate_status" readonly="1"/>
-                        </group> -->
+                        </group>
                     </group>
                 </page>
             </notebook>
-
         </field>
     </record>
 </odoo>

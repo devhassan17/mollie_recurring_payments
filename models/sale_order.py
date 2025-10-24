@@ -1,4 +1,4 @@
-from odoo import models, api, _
+from odoo import models, api, _, fields
 import requests
 import logging
 
@@ -7,7 +7,15 @@ _logger = logging.getLogger(__name__)
 class SaleOrder(models.Model):
     _inherit = "sale.order"
     
-    
+    mollie_payment_id = fields.Char(string="Mollie Payment ID", readonly=True)
+    mollie_customer_id = fields.Char(string="Mollie Customer ID", readonly=True)
+    mollie_mandate_id = fields.Char(string="Mollie Mandate ID", readonly=True)
+    mollie_mandate_status = fields.Selection([
+        ('pending', 'Pending'),
+        ('valid', 'Valid'),
+        ('invalid', 'Invalid'),
+        ('expired', 'Expired'),
+    ], string="Mandate Status", readonly=True)
 
     def action_confirm(self):
         """When a sale order is confirmed, create Mollie customer + mandate."""
