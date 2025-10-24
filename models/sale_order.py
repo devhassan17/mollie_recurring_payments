@@ -22,10 +22,16 @@ class SaleOrder(models.Model):
         readonly=True
     )
     
-    
     mollie_transaction_id = fields.Char(
         string="Mollie Transaction ID",
         related="partner_id.mollie_transaction_id",
+        store=False,
+        readonly=True
+    )
+
+    mollie_mandate_status = fields.Char(
+        string="Mollie Mandate Status",
+        related="partner_id.mollie_mandate_status",
         store=False,
         readonly=True
     )
@@ -71,6 +77,10 @@ class SaleOrder(models.Model):
 
             p_resp = requests.post("https://api.mollie.com/v2/payments", json=payment_payload, headers=headers)
             if p_resp.status_code == 201:
+                payment_data = p_resp.json()
+                transaction_id = payment_data.get("id")
+                partner.sudo().write({"mollie_transaction_id": transaction_id})
+                partner.sudo().write({"mollie_mandate_status": payment_data.get("status")})
                 _logger.info("Mandate payment created for %s", partner.name)
             else:
                 _logger.error("Mandate payment failed: %s", p_resp.text)
