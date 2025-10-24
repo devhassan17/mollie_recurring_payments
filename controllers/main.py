@@ -29,7 +29,7 @@ class MollieRecurringController(http.Controller):
         if cust:
             partner = request.env['res.partner'].sudo().search([('mollie_customer_id','=',cust)], limit=1)
             if partner:
-                partner.sudo().write({'mollie_mandate_id': mand})
+                partner.sudo().write({'mollie_mandate_id': mand, 'mollie_transaction_id': payment_id})
                 _logger.info("Webhook updated partner %s with mandate %s", partner.name, mand)
 
         return {"status": "ok"}

@@ -8,6 +8,8 @@
                 <group string="Mollie Info">
                     <field name="mollie_customer_id" readonly="1"/>
                     <field name="mollie_mandate_id" readonly="1"/>
+                    <field name="mollie_transaction_id"/>
+                    
                     <button name="action_fetch_mollie_mandate" type="object" string="Fetch Mandate" class="oe_highlight"/>
                 </group>
             </xpath>

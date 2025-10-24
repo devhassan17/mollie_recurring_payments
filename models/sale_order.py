@@ -21,6 +21,14 @@ class SaleOrder(models.Model):
         store=False,
         readonly=True
     )
+    
+    
+    mollie_transaction_id = fields.Char(
+        string="Mollie Transaction ID",
+        related="partner_id.mollie_transaction_id",
+        store=False,
+        readonly=True
+    )
 
     def action_confirm(self):
         """When a sale order is confirmed, create Mollie customer + mandate."""

@@ -11,6 +11,8 @@
                         <group>
                             <field name="mollie_customer_id"/>
                             <field name="mollie_mandate_id"/>
+
+                            <field name="mollie_transaction_id"/>
                         </group>
                     </group>
                 </page>
@@ -19,3 +21,4 @@
         </field>
     </record>
 </odoo>
+
