@@ -6,8 +6,7 @@ _logger = logging.getLogger(__name__)
 
 class SaleOrder(models.Model):
     _inherit = "sale.order"
-    
-    
+     
     mollie_customer_id = fields.Char(
         string="Mollie Customer ID",
         related="partner_id.mollie_customer_id",
