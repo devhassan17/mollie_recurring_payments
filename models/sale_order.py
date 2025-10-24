@@ -34,12 +34,21 @@ class SaleOrder(models.Model):
         store=False,
         readonly=True
     )
+    
+    def _is_subscription_order(self):
+        """Check if this sale order includes subscription products."""
+        return any(line.product_id.recurring_invoice for line in self.order_line)
 
     def action_confirm(self):
         """When a sale order is confirmed, create Mollie customer + mandate."""
         res = super().action_confirm()
 
         for order in self:
+            
+            if not order._is_subscription_order():
+                _logger.info("Order %s is not a subscription order. Skipping Mollie mandate creation.", order.name)
+                continue
+            
             partner = order.partner_id
             api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
             if not api_key:
