@@ -10,6 +10,7 @@ class ResPartner(models.Model):
     mollie_customer_id = fields.Char("Mollie Customer ID", readonly=True)
     mollie_mandate_id = fields.Char("Mollie Mandate ID", readonly=True)
     mollie_transaction_id = fields.Char("Mollie Transaction ID", readonly=True)
+    mollie_mandate_status = fields.Char("Mollie Mandate Status", readonly=True)
     
     def action_fetch_mollie_mandate(self):
         """Manually fetch Mollie mandates for this partner."""
