@@ -6,6 +6,8 @@ _logger = logging.getLogger(__name__)
 
 class SaleOrder(models.Model):
     _inherit = "sale.order"
+    
+    
 
     def action_confirm(self):
         """When a sale order is confirmed, create Mollie customer + mandate."""
