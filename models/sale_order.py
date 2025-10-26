@@ -72,6 +72,11 @@ class SaleOrder(models.Model):
                     _logger.error("Customer creation failed: %s", resp.text)
                     continue
 
+            # 🛑 Prevent duplicate mandate payment creation
+            if partner.mollie_mandate_id and partner.mollie_mandate_status == "valid":
+                _logger.info("Partner %s already has a valid mandate, skipping new mandate creation.", partner.name)
+                continue
+            
             # Create mandate via iDEAL payment
             payment_payload = {
                 "amount": {"currency": order.currency_id.name, "value": f"{order.amount_total:.2f}"},
