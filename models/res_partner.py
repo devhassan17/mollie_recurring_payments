@@ -36,3 +36,6 @@ class ResPartner(models.Model):
             if valid:
                 partner.sudo().write({"mollie_mandate_id": valid[0].get("id")})
                 _logger.info("Stored valid mandate %s for %s", valid[0].get("id"), partner.name)
+                
+    
+

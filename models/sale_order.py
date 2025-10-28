@@ -95,7 +95,25 @@ class SaleOrder(models.Model):
                 partner.sudo().write({"mollie_transaction_id": transaction_id})
                 partner.sudo().write({"mollie_mandate_status": payment_data.get("status")})
                 _logger.info("Mandate payment created for %s", partner.name)
+                
+                # 🔁 Schedule mandate fetch after few seconds
+                self.env.cr.commit()
+                self.env["ir.cron"].sudo().create({
+                    "name": f"Fetch Mollie Mandate for {partner.name}",
+                    "model_id": self.env["ir.model"]._get_id("res.partner"),
+                    "state": "code",
+                    "code": f"env['res.partner'].browse({partner.id}).action_fetch_mollie_mandate()",
+                    "interval_type": "minutes",
+                    "interval_number": 1,
+                    "numbercall": 1,
+                    "active": True,
+                })
             else:
                 _logger.error("Mandate payment failed: %s", p_resp.text)
+                
+    
+
+        
+
 
         return res
