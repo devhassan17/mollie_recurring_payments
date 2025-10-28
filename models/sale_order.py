@@ -97,7 +97,21 @@ class SaleOrder(models.Model):
                 partner.sudo().write({"mollie_mandate_status": payment_data.get("status")})
                 _logger.info("Mandate payment created for %s", partner.name)
                 
-                partner.sudo().with_delay(eta=60).action_fetch_mollie_mandate()
+                cron_vals = {
+                    "name": f"Fetch Mollie Mandate for {partner.name}",
+                    "model_id": self.env["ir.model"]._get_id("res.partner"),
+                    "state": "code",
+                    "code": f"model.browse({partner.id}).action_fetch_mollie_mandate()",
+                    "interval_type": "seconds",
+                    "interval_number": 10,
+                    "active": True,
+                }
+                
+                try:
+                    self.env["ir.cron"].sudo().create(cron_vals)
+                    _logger.info("Scheduled mandate fetch for partner %s", partner.name)
+                except Exception as e:
+                    _logger.error("Failed to create cron job for partner %s: %s", partner.name, str(e))
               
             else:
                 _logger.error("Mandate payment failed: %s", p_resp.text)
