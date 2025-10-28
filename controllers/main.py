@@ -26,6 +26,8 @@ class MollieRecurringController(http.Controller):
         cust = payment_data.get("customerId")
         mand = payment_data.get("_links", {}).get("mandate", {}).get("href", "").split("/")[-1]
 
+        _logger.info("payment_data: ", payment_data)
+
         status = payment_data.get("status")
 
         if cust:
