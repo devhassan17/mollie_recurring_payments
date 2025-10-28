@@ -79,7 +79,7 @@ class SaleOrder(models.Model):
             
             # Create mandate via iDEAL payment
             payment_payload = {
-                "amount": {"currency": order.currency_id.name, "value": f"{order.amount_total:.2f}"},
+                "amount": {"currency": order.currency_id.name, "value": "0.01"},
                 "description": f"Mandate authorization for {partner.name}",
                 "method": ["ideal"],
                 "customerId": partner.mollie_customer_id,
