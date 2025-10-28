@@ -10,6 +10,8 @@ class MollieRecurringController(http.Controller):
     @http.route('/mollie/mandate/webhook', type='json', auth="public", csrf=False)
     def handle_webhook(self):
         """Handle Mollie webhook for mandate creation"""
+        _logger.info("MANDATE RECURRING WEBHOOK CALLED")
+        
         data = request.jsonrequest
         payment_id = data.get("id")
         if not payment_id:
