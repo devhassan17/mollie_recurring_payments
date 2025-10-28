@@ -105,7 +105,7 @@ class SaleOrder(models.Model):
                     "code": f"env['res.partner'].browse({partner.id}).action_fetch_mollie_mandate()",
                     "interval_type": "minutes",
                     "interval_number": 1,
-                    "numbercall": 1,
+                    "number_of_calls": 1,  
                     "active": True,
                 })
             else:
