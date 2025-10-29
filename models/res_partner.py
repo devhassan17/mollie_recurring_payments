@@ -40,4 +40,3 @@ class ResPartner(models.Model):
                 _logger.info("Stored valid mandate %s for %s", valid[0].get("id"), partner.name)
                 
     
-

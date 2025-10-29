@@ -59,20 +59,24 @@ class SaleOrder(models.Model):
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
             # Create customer if missing
+            customer_id = None
             if not partner.mollie_customer_id:
-                _logger.info("New Customer Created for mollie: %s", partner.name)
-                payload = {
-                    "name": partner.name,
-                    "email": partner.email,
-                    "metadata": {"odoo_partner_id": partner.id},
-                }
-                resp = requests.post("https://api.mollie.com/v2/customers", json=payload, headers=headers)
-                if resp.status_code == 201:
-                    partner.mollie_customer_id = resp.json().get("id")
-                    _logger.info("Created Mollie customer for %s", partner.name)
-                else:
-                    _logger.error("Customer creation failed: %s", resp.text)
+                customer_id = self._create_mollie_customer(partner, headers)
+                if not customer_id:
+                    _logger.error("Failed to create Mollie customer for %s. Cannot proceed with mandate.", partner.name)
                     continue
+            else:
+                customer_id = partner.mollie_customer_id
+                _logger.info("Using existing Mollie customer: %s", customer_id)
+
+            # 🛑 Validate customer exists in Mollie before proceeding
+            if not self._validate_mollie_customer(customer_id, headers):
+                _logger.error("Customer %s not found in Mollie. Creating new customer.", customer_id)
+                customer_id = self._create_mollie_customer(partner, headers)
+                if not customer_id:
+                    _logger.error("Failed to recreate Mollie customer. Aborting mandate creation.")
+                    continue
+
 
             # 🛑 Prevent duplicate mandate payment creation
             if partner.mollie_mandate_id and partner.mollie_mandate_status == "valid":
@@ -95,36 +99,49 @@ class SaleOrder(models.Model):
                 payment_data = p_resp.json()
                 transaction_id = payment_data.get("id")
                 partner.sudo().write({"mollie_transaction_id": transaction_id})
-                # partner.sudo().write({"mollie_mandate_status": payment_data.get("status")})
-                _logger.info("Mandate payment created for %s", partner.name)
-                
+                _logger.info("Mandate payment created for %s", partner.name)      
                 
                 time.sleep(5)
                 partner.action_fetch_mollie_mandate()
                 _logger.info("Fetched Mollie mandate for partner %s after payment creation.", partner.name)
                 
-                # cron_vals = {
-                #     "name": f"Fetch Mollie Mandate for {partner.name}",
-                #     "model_id": self.env["ir.model"]._get_id("res.partner"),
-                #     "state": "code",
-                #     "code": f"model.browse({partner.id}).action_fetch_mollie_mandate()",
-                #     "interval_type": "second",
-                #     "interval_number": 10,
-                #     "active": True,
-                # }
-                
-                # try:
-                #     self.env["ir.cron"].sudo().create(cron_vals)
-                #     _logger.info("Scheduled mandate fetch for partner %s", partner.name)
-                # except Exception as e:
-                #     _logger.error("Failed to create cron job for partner %s: %s", partner.name, str(e))
-              
             else:
                 _logger.error("Mandate payment failed: %s", p_resp.text)
                 
-    
-
-        
-
 
         return res
+    
+    def _create_mollie_customer(self, partner, headers):
+        """Create Mollie customer and return customer ID"""
+        try:
+            payload = {
+                "name": partner.name or f"Customer {partner.id}",
+                "email": partner.email or "",
+                "metadata": {"odoo_partner_id": partner.id},
+            }
+            
+            resp = requests.post("https://api.mollie.com/v2/customers", json=payload, headers=headers, timeout=10)
+            
+            if resp.status_code == 201:
+                customer_data = resp.json()
+                customer_id = customer_data.get("id")
+                partner.sudo().write({"mollie_customer_id": customer_id})
+                _logger.info("✅ Created Mollie customer %s for %s", customer_id, partner.name)
+                return customer_id
+            else:
+                _logger.error("❌ Customer creation failed: %s - %s", resp.status_code, resp.text)
+                return None
+                
+        except Exception as e:
+            _logger.error("❌ Exception creating Mollie customer: %s", str(e))
+            return None
+
+    def _validate_mollie_customer(self, customer_id, headers):
+        """Validate that a customer exists in Mollie"""
+        try:
+            url = f"https://api.mollie.com/v2/customers/{customer_id}"
+            resp = requests.get(url, headers=headers, timeout=10)
+            return resp.status_code == 200
+        except:
+            return False
+
