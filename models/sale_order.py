@@ -95,11 +95,11 @@ class SaleOrder(models.Model):
                 payment_data = p_resp.json()
                 transaction_id = payment_data.get("id")
                 partner.sudo().write({"mollie_transaction_id": transaction_id})
-                partner.sudo().write({"mollie_mandate_status": payment_data.get("status")})
+                # partner.sudo().write({"mollie_mandate_status": payment_data.get("status")})
                 _logger.info("Mandate payment created for %s", partner.name)
                 
                 
-                time.sleep(10)
+                time.sleep(5)
                 partner.action_fetch_mollie_mandate()
                 _logger.info("Fetched Mollie mandate for partner %s after payment creation.", partner.name)
                 
