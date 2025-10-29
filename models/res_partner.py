@@ -32,6 +32,7 @@ class ResPartner(models.Model):
                 continue
 
             data = resp.json().get("_embedded", {}).get("mandates", [])
+            _logger.info("Fetched Data %s", data)
             valid = [m for m in data if m.get("status") == "valid"]
             if valid:
                 partner.sudo().write({"mollie_mandate_id": valid[0].get("id")})
