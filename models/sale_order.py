@@ -82,7 +82,7 @@ class SaleOrder(models.Model):
                 "customerId": partner.mollie_customer_id,
                 "redirectUrl": f"{self.env['ir.config_parameter'].sudo().get_param('web.base.url')}/mollie/mandate/return",
                 "webhookUrl": f"{self.env['ir.config_parameter'].sudo().get_param('web.base.url')}/mollie/mandate/webhook",
-                "sequenceType": "first",
+                "sequenceType": "recurring",
             }
 
             p_resp = requests.post("https://api.mollie.com/v2/payments", json=payment_payload, headers=headers)
