@@ -37,16 +37,6 @@ class SaleOrder(models.Model):
         readonly=True
     )
     
-    subscription_type = fields.Selection([
-        ('monthly', 'Monthly'),
-        ('bimonthly', 'Every 2 Months'),
-    ], string="Subscription Type")
-
-    next_payment_date = fields.Date("Next Payment Date")
-    last_payment_status = fields.Char("Last Payment Status", readonly=True)
-    mollie_last_transaction_id = fields.Char("Last Mollie Transaction ID", readonly=True)
-
-    
     def _is_subscription_order(self):
         """Check if this sale order includes subscription products."""
         return any(line.product_id.recurring_invoice for line in self.order_line)
@@ -56,8 +46,6 @@ class SaleOrder(models.Model):
         res = super().action_confirm()
 
         for order in self:
-            # order.next_payment_date = fields.Date.today() + timedelta(days=30 if order.subscription_type == "monthly" else 60)
-
             if not order._is_subscription_order():
                 _logger.info("Order %s is not a subscription order. Skipping Mollie mandate creation.", order.name)
                 continue
