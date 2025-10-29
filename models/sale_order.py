@@ -58,6 +58,9 @@ class SaleOrder(models.Model):
             partner = order.partner_id
             time.sleep(5)
             partner.action_fetch_mollie_mandate()
+            
+            
+            _logger.info("Partner %s", partner)
                 
             # partner = order.partner_id
             # api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
