@@ -39,12 +39,4 @@ class ResPartner(models.Model):
                 partner.sudo().write({"mollie_mandate_status": valid[0].get("status")})
                 _logger.info("Stored valid mandate %s for %s", valid[0].get("id"), partner.name)
                 
-    
-                # FORCE UI REFRESH
-                partner.invalidate_cache()
-                _logger.info("✅ Stored valid mandate %s for %s", valid[0].get("id"), partner.name)
-                
-                # Optional: Also refresh the related sale orders
-                orders = self.env['sale.order'].search([('partner_id', '=', partner.id)])
-                if orders:
-                    orders.invalidate_cache()
+                self.env['res.partner'].flush_model()
