@@ -58,107 +58,71 @@ class SaleOrder(models.Model):
             partner = order.partner_id
             time.sleep(5)
             partner.action_fetch_mollie_mandate()
-            
-            
+            _logger.info("Fetched Mollie mandate for partner %s", partner.name)
             _logger.info("Partner %s", partner)
-                
-            # partner = order.partner_id
-            # api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
-            # if not api_key:
-            #     _logger.error("Missing Mollie API key.")
-            #     continue
-
-            # headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-            # # Create customer if missing
-            # if not partner.mollie_customer_id:
-            #     _logger.info("New Customer Created for mollie: %s", partner.name)
-            #     payload = {
-            #         "name": partner.name,
-            #         "email": partner.email,
-            #         "metadata": {"odoo_partner_id": partner.id},
-            #     }
-            #     resp = requests.post("https://api.mollie.com/v2/customers", json=payload, headers=headers)
-            #     if resp.status_code == 201:
-            #         partner.mollie_customer_id = resp.json().get("id")
-            #         _logger.info("Created Mollie customer for %s", partner.name)
-            #     else:
-            #         _logger.error("Customer creation failed: %s", resp.text)
-            #         continue
-
-            # # 🛑 Prevent duplicate mandate payment creation
-            # if partner.mollie_mandate_id and partner.mollie_mandate_status == "valid":
-            #     _logger.info("Partner %s already has a valid mandate, skipping new mandate creation.", partner.name)
-            #     continue
-            
-            # # Create mandate via iDEAL payment
-            # payment_payload = {
-            #     "amount": {"currency": order.currency_id.name, "value": "0.01"},
-            #     "description": f"Mandate authorization for {partner.name}",
-            #     "method": ["ideal"],
-            #     "customerId": partner.mollie_customer_id,
-            #     "redirectUrl": f"{self.env['ir.config_parameter'].sudo().get_param('web.base.url')}/mollie/mandate/return",
-            #     "webhookUrl": f"{self.env['ir.config_parameter'].sudo().get_param('web.base.url')}/mollie/mandate/webhook",
-            #     "sequenceType": "first",
-            # }
-
-            # p_resp = requests.post("https://api.mollie.com/v2/payments", json=payment_payload, headers=headers)
-            # if p_resp.status_code == 201:
-            #     payment_data = p_resp.json()
-            #     transaction_id = payment_data.get("id")
-            #     partner.sudo().write({"mollie_transaction_id": transaction_id})
-            #     _logger.info("Mandate payment created for %s", partner.name)      
-                
-            #     time.sleep(5)
-            #     partner.action_fetch_mollie_mandate()
-        #         _logger.info("Fetched Mollie mandate for partner %s after payment creation.", partner.name)
-                
-        #     else:
-        #         _logger.error("Mandate payment failed: %s", p_resp.text)
-                
 
         return res
 
 """ PUSH THIS CODE TO OFFICIAL MOLLIE MODULE WITH THE FOLLOWING CHANGE in File Name models/payment_transaction.py in function _mollie_prepare_payment_request_payload:
 
 # --- EDITED Recurring logic ---
+def _mollie_prepare_payment_request_payload(self):
+    user_lang = self.env.context.get('lang')
+    base_url = self.provider_id.get_base_url()
+    redirect_url = urls.url_join(base_url, MollieController._return_url)
+    webhook_url = urls.url_join(base_url, MollieController._webhook_url)
+    decimal_places = CURRENCY_MINOR_UNITS.get(
+        self.currency_id.name, self.currency_id.decimal_places
+    )
 
-is_subscription_order = any(line.product_id.recurring_invoice for line in self.order_line)
+    # Fetch partner info
+    partner = self.partner_id
 
-headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        'description': self.reference,
+        'amount': {
+            'currency': self.currency_id.name,
+            'value': f"{self.amount:.{decimal_places}f}",
+        },
+        'locale': user_lang if user_lang in const.SUPPORTED_LOCALES else 'en_US',
+        'method': [const.PAYMENT_METHODS_MAPPING.get(
+            self.payment_method_code, self.payment_method_code
+        )],
+        'redirectUrl': f'{redirect_url}?ref={self.reference}',
+        'webhookUrl': f'{webhook_url}?ref={self.reference}',
+    }
 
-if is_subscription_order:
-    
+    # --- EDITED Recurring logic ---
     api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
+    order = self.env['sale.order'].search([('name', '=', self.reference)], limit=1)
+    is_subscription_order = any(line.product_id.recurring_invoice for line in order.order_line)
     
-    if not api_key:
-        _logger.error("Missing Mollie API key.")
-        continue
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    customer_id = partner.mollie_customer_id
-    
-    if not customer_id:
-        payload = {
-            "name": partner.name,
-            "email": partner.email,
-            "metadata": {"odoo_partner_id": partner.id},
-        }
+    if is_subscription_order:
         
-        resp = requests.post("https://api.mollie.com/v2/customers", json=payload, headers=headers)
         
-        if resp.status_code == 201:
-            partner.mollie_customer_id = resp.json().get("id")
-            customer_id = resp.json().get("id")
-            _logger.info("Created Mollie customer for %s", partner.name)
+        customer_id = partner.mollie_customer_id
+        
+        if not customer_id:
+            payload = {
+                "name": partner.name,
+                "email": partner.email,
+                "metadata": {"odoo_partner_id": partner.id},
+            }
+            resp = requests.post("https://api.mollie.com/v2/customers", json=payload, headers=headers)
+            if resp.status_code == 201:
+                partner.mollie_customer_id = resp.json().get("id")
+                customer_id = resp.json().get("id")
+                _logger.info("Created Mollie customer for %s", partner.name)
+            else:
+                _logger.error("Customer creation failed: %s", resp.text)
         else:
-            _logger.error("Customer creation failed: %s", resp.text)
-            continue
-
-    payload.update({
-        'sequenceType': 'first',
-        'customerId': customer_id,
-    })
-    
-return payload
+            payload.update({
+                'sequenceType': 'first',
+                'customerId': customer_id,
+            })
+            
+    return payload
 
 """
