@@ -56,7 +56,7 @@ class SaleOrder(models.Model):
         res = super().action_confirm()
 
         for order in self:
-            order.next_payment_date = fields.Date.today() + timedelta(days=30 if order.subscription_type == "monthly" else 60)
+            # order.next_payment_date = fields.Date.today() + timedelta(days=30 if order.subscription_type == "monthly" else 60)
 
             if not order._is_subscription_order():
                 _logger.info("Order %s is not a subscription order. Skipping Mollie mandate creation.", order.name)
