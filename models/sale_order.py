@@ -37,6 +37,15 @@ class SaleOrder(models.Model):
         readonly=True
     )
     
+    
+    subscription_type = fields.Selection([
+        ("monthly", "Monthly"),
+        ("bimonthly", "Every 2 Months"),
+    ], string="Subscription Type")
+
+    next_payment_date = fields.Date("Next Payment Date")
+    last_payment_id = fields.Char("Last Mollie Payment ID")
+    
     def _is_subscription_order(self):
         """Check if this sale order includes subscription products."""
         return any(line.product_id.recurring_invoice for line in self.order_line)
