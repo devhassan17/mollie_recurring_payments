@@ -39,4 +39,4 @@ class ResPartner(models.Model):
                 partner.sudo().write({"mollie_mandate_status": valid[0].get("status")})
                 _logger.info("Stored valid mandate %s for %s", valid[0].get("id"), partner.name)
                 
-                self.env['res.partner'].flush_model()
+                partner.refresh()
