@@ -102,7 +102,7 @@ class SaleOrder(models.Model):
                     "model_id": self.env["ir.model"]._get_id("res.partner"),
                     "state": "code",
                     "code": f"model.browse({partner.id}).action_fetch_mollie_mandate()",
-                    "interval_type": "seconds",
+                    "interval_type": "second",
                     "interval_number": 10,
                     "active": True,
                 }
