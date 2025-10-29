@@ -69,15 +69,6 @@ class SaleOrder(models.Model):
                 customer_id = partner.mollie_customer_id
                 _logger.info("Using existing Mollie customer: %s", customer_id)
 
-            # 🛑 Validate customer exists in Mollie before proceeding
-            if not self._validate_mollie_customer(customer_id, headers):
-                _logger.error("Customer %s not found in Mollie. Creating new customer.", customer_id)
-                customer_id = self._create_mollie_customer(partner, headers)
-                if not customer_id:
-                    _logger.error("Failed to recreate Mollie customer. Aborting mandate creation.")
-                    continue
-
-
             # 🛑 Prevent duplicate mandate payment creation
             if partner.mollie_mandate_id and partner.mollie_mandate_status == "valid":
                 _logger.info("Partner %s already has a valid mandate, skipping new mandate creation.", partner.name)
