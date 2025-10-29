@@ -6,7 +6,7 @@
         <field name="arch" type="xml">
 
             <notebook position="inside">
-                <page string="Mollie Details">
+                <page string="Mollie Mandate Details">
                     <group>
                         <group>
                             <field name="mollie_customer_id"/>
