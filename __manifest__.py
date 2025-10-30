@@ -11,7 +11,7 @@
     "data": [
         "views/res_partner_views.xml",
         "views/sale_order_views.xml",
-        "data/ir_cron_subscription.xml",
+        "data/cron_data.xml",
     ],
     "installable": True,
     "application": False,
