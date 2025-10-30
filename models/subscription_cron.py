@@ -20,6 +20,7 @@ class MollieSubscriptionCron(models.Model):
         orders = SaleOrder.search([
             ("subscription_type", "in", ["monthly", "bimonthly"]),
             ("next_payment_date", "=", today),
+            ("last_payment_date", "!=", today),  
             ("partner_id.mollie_mandate_id", "!=", False),
             ("partner_id.mollie_mandate_status", "=", "valid"),
             ("state", "in", ["sale", "done"]),
