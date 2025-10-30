@@ -17,17 +17,17 @@ class MollieSubscriptionCron(models.Model):
         SaleOrder = self.env["sale.order"]
         today = fields.Date.today()
 
+        # Find subscriptions due today with valid Mollie mandates
         orders = SaleOrder.search([
-            ("subscription_type", "in", ["monthly", "bimonthly"]),
-            ("next_payment_date", "=", today),
-            ("last_payment_date", "!=", today),  
-            ("partner_id.mollie_mandate_id", "!=", False),
-            ("partner_id.mollie_mandate_status", "=", "valid"),
-            ("state", "in", ["sale", "done"]),
+            ('plan_id', '!=', False),  # Has a subscription plan
+            ('next_invoice_date', '=', today),  # Due today
+            ('partner_id.mollie_mandate_id', '!=', False),  # Has Mollie mandate
+            ('partner_id.mollie_mandate_status', '=', 'valid'),  # Mandate is valid
+            ('state', 'in', ['sale', 'done']),  # Active orders
         ])
 
         if not orders:
-            _logger.info("✅ No subscriptions due for today (%s)", today)
+            _logger.info("✅ No subscription payments due for today (%s)", today)
             return True
 
         _logger.info("📦 Found %d subscription(s) due for payment", len(orders))
@@ -45,7 +45,7 @@ class MollieSubscriptionCron(models.Model):
 
             payload = {
                 "amount": {
-                    "currency": "EUR",
+                    "currency": "EUR",  
                     "value": f"{amount:.2f}"
                 },
                 "customerId": partner.mollie_customer_id,
@@ -55,25 +55,26 @@ class MollieSubscriptionCron(models.Model):
                 "metadata": {"order_id": order.id},
             }
 
-            _logger.info("💳 Charging %s for %s EUR (Order %s)", partner.name, amount, order.name)
+            _logger.info("💳 Charging %s for %s EUR (Order %s, Plan: %s)", 
+                        partner.name, amount, order.name, order.plan_id.name)
 
             try:
-                response = requests.post("https://api.mollie.com/v2/payments", json=payload, headers=headers, timeout=15)
+                response = requests.post("https://api.mollie.com/v2/payments", 
+                                       json=payload, headers=headers, timeout=15)
                 response_data = response.json()
 
                 if response.status_code == 201:
                     payment_id = response_data.get("id")
-                    order.message_post(body=f"✅ Mollie subscription payment successful. Payment ID: {payment_id}")
+                    order.message_post(
+                        body=f"✅ Mollie subscription payment successful. Payment ID: {payment_id}"
+                    )
                     _logger.info("✅ Payment success for %s, Mollie ID %s", order.name, payment_id)
 
-                    # Set next payment date
-                    if order.subscription_type == "monthly":
-                        next_date = today + timedelta(days=30)
-                    else:  # bimonthly
-                        next_date = today + timedelta(days=60)
-
+                    
+                    next_date = self._calculate_next_payment_date(order, today)
+                    
                     order.sudo().write({
-                        "next_payment_date": next_date,
+                        "next_invoice_date": next_date,  # Update next invoice date
                         "last_payment_id": payment_id,
                     })
 
@@ -87,3 +88,16 @@ class MollieSubscriptionCron(models.Model):
 
         _logger.info("🏁 Mollie subscription payment cron completed successfully.")
         return True
+
+    def _calculate_next_payment_date(self, order, current_date):
+        """Calculate next payment date based on plan type"""
+        from datetime import timedelta
+        
+        plan_name = order.plan_id.name.lower()
+        
+        if '3 monthly' in plan_name:
+            return current_date + timedelta(days=90)
+        elif '2 monthly' in plan_name:
+            return current_date + timedelta(days=60)
+        else:  # Monthly (default)
+            return current_date + timedelta(days=30)
