@@ -79,7 +79,7 @@ class SaleOrder(models.Model):
 """ PUSH THIS CODE TO OFFICIAL MOLLIE MODULE WITH THE FOLLOWING CHANGE in File Name models/payment_transaction.py in function _mollie_prepare_payment_request_payload:
 
 # --- EDITED Recurring logic ---
- def _mollie_prepare_payment_request_payload(self):
+    def _mollie_prepare_payment_request_payload(self):
         user_lang = self.env.context.get('lang')
         base_url = self.provider_id.get_base_url()
         redirect_url = urls.url_join(base_url, MollieController._return_url)
@@ -106,9 +106,9 @@ class SaleOrder(models.Model):
         }
     
         # --- EDITED Recurring logic ---
+        
         mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
         api_key = mollie_provider.mollie_api_key
-        
         order = self.env['sale.order'].search([('name', '=', self.reference)], limit=1)
         is_subscription_order = any(line.product_id.recurring_invoice for line in order.order_line)
         
