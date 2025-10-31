@@ -59,7 +59,9 @@ class SaleOrder(models.Model):
                 _logger.info("Order %s is not a subscription order. Skipping Mollie mandate creation.", order.name)
                 continue
             
-            api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
+            mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
+            api_key = mollie_provider.mollie_api_key
+            
             if not api_key:
                 _logger.error("Missing Mollie API key.")
                 continue
@@ -104,7 +106,9 @@ class SaleOrder(models.Model):
         }
     
         # --- EDITED Recurring logic ---
-        api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
+        mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
+        api_key = mollie_provider.mollie_api_key
+        
         order = self.env['sale.order'].search([('name', '=', self.reference)], limit=1)
         is_subscription_order = any(line.product_id.recurring_invoice for line in order.order_line)
         

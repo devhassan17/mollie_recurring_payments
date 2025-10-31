@@ -17,7 +17,12 @@ class MollieRecurringController(http.Controller):
         if not payment_id:
             return {"status": "error", "message": "no id"}, 400
 
-        api_key = request.env["ir.config_parameter"].sudo().get_param('mollie.api_key_test')
+        mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
+        api_key = mollie_provider.mollie_api_key
+        if not api_key:
+            _logger.error("Webhook Mollie API key missing!")
+            return {"status": "error"}, 400
+        
         headers = {"Authorization": f"Bearer {api_key}"}
         resp = requests.get(f"https://api.mollie.com/v2/payments/{payment_id}", headers=headers, timeout=10)
         if resp.status_code != 200:

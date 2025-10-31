@@ -19,7 +19,9 @@ class ResPartner(models.Model):
                 _logger.warning("Partner %s has no Mollie customer ID", partner.name)
                 continue
 
-            api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
+            mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
+            api_key = mollie_provider.mollie_api_key
+            
             if not api_key:
                 _logger.error("Missing Mollie API key.")
                 continue

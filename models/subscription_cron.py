@@ -32,9 +32,11 @@ class MollieSubscriptionCron(models.Model):
 
         _logger.info("📦 Found %d subscription(s) due for payment", len(orders))
 
-        api_key = self.env["ir.config_parameter"].sudo().get_param("mollie.api_key_test")
+        mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
+        api_key = mollie_provider.mollie_api_key
+        
         if not api_key:
-            _logger.error("❌ Mollie API key missing in system parameters!")
+            _logger.error("❌ Mollie API key missing in Mollie Module")
             return False
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
