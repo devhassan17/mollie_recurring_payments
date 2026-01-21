@@ -1,7 +1,8 @@
 {
     'name': 'mollie_recurring_payments',
-    'version': '1.5',
+    'version': '1.0.0',
     'category': 'Payment',
+    'author': 'Managemyweb.co',
     'summary': 'Recurring payments with Mollie iDEAL for subscriptions',
     'description': """
         Enable recurring payments with Mollie iDEAL for subscription products
@@ -16,4 +17,7 @@
     "installable": True,
     "application": False,
     "license": "LGPL-3",
+    "support": "programmer.alihassan@gmail.com",
+    "price": 199.99,
+    "currency": "USD",
 }
