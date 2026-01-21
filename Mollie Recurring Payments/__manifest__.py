@@ -22,6 +22,6 @@
     "application": False,
     "license": "LGPL-3",
     "support": "programmer.alihassan@gmail.com",
-    "price": 199.99,
+    "price": 99.99,
     "currency": "USD",
 }
