@@ -1,0 +1,217 @@
+<section class="oe_container">
+  <div class="oe_row oe_spaced">
+    <h2>Mollie Recurring Payments for Odoo 18</h2>
+    <p>
+      This module enables recurring payments with Mollie iDEAL for subscription products in Odoo.
+      It provides seamless integration between Odoo's subscription management system and Mollie's
+      secure payment platform.
+    </p>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Key Features</h3>
+    <ul>
+      <li>Automatic subscription payment processing</li>
+      <li>Mollie iDEAL integration for first-time and recurring payments</li>
+      <li>Mandate creation and management for recurring payments</li>
+      <li>Customer synchronization between Odoo and Mollie</li>
+      <li>Configurable subscription intervals (Monthly, Bi-monthly)</li>
+      <li>Real-time webhook notifications for payment status</li>
+      <li>Complete payment history and tracking</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Dependencies</h3>
+    <ul>
+      <li>base</li>
+      <li>contacts</li>
+      <li>sale_management</li>
+      <li>website_sale</li>
+      <li>payment_mollie</li>
+      <li>sale_subscription</li>
+      <li>sale</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Installation</h3>
+    <ol>
+      <li>Install the official Mollie payment module (<code>payment_mollie</code>)</li>
+      <li>Install this module (<code>mollie_recurring_payments</code>)</li>
+      <li>Configure your Mollie API keys in Odoo</li>
+      <li>Set up your subscription products</li>
+    </ol>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Configuration</h3>
+
+    <h4>Mollie Setup</h4>
+    <ol>
+      <li>Go to Accounting / Invoicing → Configuration → Payment Providers</li>
+      <li>Select or create the Mollie payment provider</li>
+      <li>Enter your Mollie API keys (test and/or live)</li>
+      <li>Enable SEPA Direct Debit in Mollie settings</li>
+    </ol>
+
+    <h4>Subscription Products</h4>
+    <ol>
+      <li>Create or open a product</li>
+      <li>Enable "Recurring Invoice"</li>
+      <li>Assign a subscription plan (Monthly, Bi-monthly, etc.)</li>
+    </ol>
+
+    <h4>Cron Jobs</h4>
+    <p>
+      This module automatically installs a daily scheduled action for processing recurring payments:
+    </p>
+    <ul>
+      <li><strong>Name:</strong> Mollie: Process Subscription Charges</li>
+      <li><strong>Interval:</strong> Daily</li>
+      <li><strong>Model:</strong> mollie.subscription.cron</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Features in Detail</h3>
+
+    <h4>Customer Management</h4>
+    <ul>
+      <li>Automatic creation of Mollie customers</li>
+      <li>Synchronization of customer data between Odoo and Mollie</li>
+      <li>Storage of Mollie customer IDs and mandates</li>
+    </ul>
+
+    <h4>Mandate Handling</h4>
+    <ul>
+      <li>Automatic mandate creation after first payment</li>
+      <li>Mandate status tracking</li>
+      <li>Manual mandate synchronization option</li>
+    </ul>
+
+    <h4>Payment Processing</h4>
+    <ul>
+      <li>First payment handled via iDEAL</li>
+      <li>Subsequent payments processed automatically</li>
+      <li>Payment status tracking and error handling</li>
+      <li>Webhook integration for real-time updates</li>
+    </ul>
+
+    <h4>User Interface Enhancements</h4>
+    <ul>
+      <li>Sale order view enhanced with mandate information</li>
+      <li>Customer form displays Mollie mandate details</li>
+      <li>Integrated payment status tracking</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Usage</h3>
+
+    <h4>Creating a Subscription</h4>
+    <ol>
+      <li>Create a sale order with subscription products</li>
+      <li>Confirm the order</li>
+      <li>The customer completes the first payment via iDEAL</li>
+      <li>A mandate is automatically created and stored</li>
+      <li>Future payments are processed automatically</li>
+    </ol>
+
+    <h4>Managing Mandates</h4>
+    <ul>
+      <li>View mandate status in the customer form</li>
+      <li>Use the "Sync Mandate" button to refresh mandate data</li>
+      <li>Track mandates directly from sale orders</li>
+    </ul>
+
+    <h4>Monitoring Payments</h4>
+    <ul>
+      <li>View payment history on sale orders</li>
+      <li>Check transaction status in the Mollie dashboard</li>
+      <li>Monitor scheduled job logs for recurring payments</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Technical Details</h3>
+
+    <h4>Models</h4>
+    <ul>
+      <li><code>res.partner</code> – Mollie customer and mandate fields</li>
+      <li><code>sale.order</code> – Subscription and payment tracking</li>
+      <li><code>payment.transaction</code> – Extended to support mandate creation</li>
+      <li><code>mollie.subscription.cron</code> – Recurring payment processor</li>
+    </ul>
+
+    <h4>Controllers</h4>
+    <ul>
+      <li>Mollie webhook handler</li>
+      <li>Return URL controller for payment flow</li>
+      <li>Mandate creation and validation endpoints</li>
+    </ul>
+
+    <h4>Cron Jobs</h4>
+    <ul>
+      <li>Daily subscription payment processor</li>
+      <li>Interval-based payment execution</li>
+      <li>Built-in error handling and logging</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Error Handling</h3>
+    <ul>
+      <li>Payment processing failures</li>
+      <li>API communication issues</li>
+      <li>Mandate validation errors</li>
+      <li>Customer creation problems</li>
+    </ul>
+    <p>
+      Errors are visible in system logs, sale order chatter, and customer records.
+    </p>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Security</h3>
+    <ul>
+      <li>Secure API key handling</li>
+      <li>Protected webhook endpoints</li>
+      <li>Proper authentication for sensitive operations</li>
+      <li>Role-based access control</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>License</h3>
+    <p>This module is licensed under the LGPL-3.</p>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Version History</h3>
+    <p><strong>1.5 (Current)</strong></p>
+    <ul>
+      <li>Enhanced error handling</li>
+      <li>Improved mandate synchronization</li>
+      <li>Fixed webhook processing</li>
+      <li>Added payment status tracking</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Future Improvements</h3>
+    <ul>
+      <li>Multi-currency support</li>
+      <li>Advanced retry logic for failed payments</li>
+      <li>Enhanced reporting</li>
+      <li>Additional subscription intervals</li>
+    </ul>
+  </div>
+
+  <div class="oe_row oe_spaced">
+    <h3>Support</h3>
+    <p>
+      For issues and feature requests, please create an issue in the project repository.
+    </p>
+  </div>
+</section>
