@@ -3,6 +3,10 @@
     'version': '1.0.0',
     'category': 'Payment',
     'author': 'Managemyweb.co',
+    "website": "https://fairchain.org/mollie_recurring_payments/",
+    "category": "Payment",
+    "license": "LGPL-3",
+    "images": ["static/description/banner.png"],
     'summary': 'Recurring payments with Mollie iDEAL for subscriptions',
     'description': """
         Enable recurring payments with Mollie iDEAL for subscription products
