@@ -75,141 +75,84 @@ class SaleOrder(models.Model):
         return res
     
         
-    # @api.model
-    # def _cron_recurring_create_invoice(self):
-    #     """Extend official Odoo subscription cron with Mollie charging"""
-    #     today = fields.Date.context_today(self)  # safer than fields.Date.today()
-    #     orders = self.search([
-    #         ('plan_id', '!=', False),
-    #         ('next_invoice_date', '<=', today),
-    #         ('state', 'in', ['sale', 'done']),
-    #         ('partner_id.mollie_mandate_id', '!=', False),
-    #         ('partner_id.mollie_mandate_status', '=', 'valid'),
-    #     ])
+    @api.model
+    def _cron_recurring_create_invoice(self):
+        """Extend official Odoo subscription cron with Mollie charging"""
+        today = fields.Date.context_today(self)  # safer than fields.Date.today()
+        orders = self.search([
+            ('plan_id', '!=', False),
+            ('next_invoice_date', '<=', today),
+            ('state', 'in', ['sale', 'done']),
+            ('partner_id.mollie_mandate_id', '!=', False),
+            ('partner_id.mollie_mandate_status', '=', 'valid'),
+        ])
         
-    #     if not orders:
-    #         _logger.info("✅ No subscription payments due for today (%s)", today)
-    #         return True
+        if not orders:
+            _logger.info("✅ No subscription payments due for today (%s)", today)
+            return True
 
-    #     _logger.info("📦 Found %d subscription(s) due for payment", len(orders))
+        _logger.info("📦 Found %d subscription(s) due for payment", len(orders))
 
-    #     mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
-    #     if not mollie_provider or not mollie_provider.mollie_api_key:
-    #         _logger.error("❌ Mollie API key missing")
-    #         return super()._cron_recurring_create_invoice()
+        mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
+        if not mollie_provider or not mollie_provider.mollie_api_key:
+            _logger.error("❌ Mollie API key missing")
+            return super()._cron_recurring_create_invoice()
 
-    #     headers = {
-    #         "Authorization": f"Bearer {mollie_provider.mollie_api_key}",
-    #         "Content-Type": "application/json",
-    #     }
+        headers = {
+            "Authorization": f"Bearer {mollie_provider.mollie_api_key}",
+            "Content-Type": "application/json",
+        }
 
-    #     # Keep track of orders successfully charged
-    #     charged_orders = self.env['sale.order']
+        # Keep track of orders successfully charged
+        charged_orders = self.env['sale.order']
 
-    #     for order in orders:
-    #         partner = order.partner_id
-    #         amount = round(order.amount_total, 2)
-    #         payload = {
-    #             "amount": {"currency": "EUR", "value": f"{amount:.2f}"},
-    #             "customerId": partner.mollie_customer_id,
-    #             "mandateId": partner.mollie_mandate_id,
-    #             "description": f"Subscription renewal for {order.name}",
-    #             "sequenceType": "recurring",
-    #             "metadata": {"order_id": order.id},
-    #         }
+        for order in orders:
+            partner = order.partner_id
+            amount = round(order.amount_total, 2)
+            payload = {
+                "amount": {"currency": "EUR", "value": f"{amount:.2f}"},
+                "customerId": partner.mollie_customer_id,
+                "mandateId": partner.mollie_mandate_id,
+                "description": f"Subscription renewal for {order.name}",
+                "sequenceType": "recurring",
+                "metadata": {"order_id": order.id},
+            }
 
-    #         _logger.info("💳 Charging %s for %s EUR (Order %s)", partner.name, amount, order.name)
+            _logger.info("💳 Charging %s for %s EUR (Order %s)", partner.name, amount, order.name)
 
-    #         try:
-    #             response = requests.post(
-    #                 "https://api.mollie.com/v2/payments",
-    #                 json=payload,
-    #                 headers=headers,
-    #                 timeout=15,
-    #             )
-    #             data = response.json()
+            try:
+                response = requests.post(
+                    "https://api.mollie.com/v2/payments",
+                    json=payload,
+                    headers=headers,
+                    timeout=15,
+                )
+                data = response.json()
 
-    #             if response.status_code != 201:
-    #                 order.message_post(body=f"❌ Mollie payment failed: {data}")
-    #                 continue
+                if response.status_code != 201:
+                    order.message_post(body=f"❌ Mollie payment failed: {data}")
+                    continue
 
-    #             payment_id = data.get("id")
-    #             order.message_post(body=f"✅ Mollie payment successful<br/>Payment ID: <b>{payment_id}</b>")
-    #             order.last_payment_id = payment_id
-    #             charged_orders |= order  # mark order as successfully charged
+                payment_id = data.get("id")
+                order.message_post(body=f"✅ Mollie payment successful<br/>Payment ID: <b>{payment_id}</b>")
+                order.last_payment_id = payment_id
+                charged_orders |= order  # mark order as successfully charged
 
-    #         except Exception as e:
-    #             _logger.exception("⚠️ Mollie exception for %s", order.name)
-    #             order.message_post(body=f"⚠️ Mollie exception: {e}")
+            except Exception as e:
+                _logger.exception("⚠️ Mollie exception for %s", order.name)
+                order.message_post(body=f"⚠️ Mollie exception: {e}")
 
-    #     # 🔹 Now call Odoo cron **once** for all successfully charged orders
-    #     if charged_orders:
-    #         _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
-    #         super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
+        # 🔹 Now call Odoo cron **once** for all successfully charged orders
+        if charged_orders:
+            _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
+            super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
 
-    #         # Attach Mollie payment IDs to the latest invoice
-    #         for order in charged_orders:
-    #             invoice = order.invoice_ids.sorted('id', reverse=True)[:1]
-    #             if invoice:
-    #                 invoice.message_post(
-    #                     body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
-    #                 )
+            # Attach Mollie payment IDs to the latest invoice
+            for order in charged_orders:
+                invoice = order.invoice_ids.sorted('id', reverse=True)[:1]
+                if invoice:
+                    invoice.message_post(
+                        body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
+                    )
 
-    #     return True
-
-
-# class SaleSubscription(models.Model):
-#     _inherit = "sale.subscription"
-
-#     @api.model
-#     def _cron_recurring_create_invoice(self):
-#         _logger.info("🔹 Mollie-integrated subscription cron triggered")
-
-#         # 1. First run Mollie payment logic for due subscriptions
-#         today = fields.Date.context_today(self)
-#         orders = self.env['sale.order'].search([
-#             ('next_invoice_date', '<=', today),
-#             ('state', 'in', ['sale', 'done']),
-#             ('partner_id.mollie_mandate_id', '!=', False),
-#             ('partner_id.mollie_mandate_status', '=', 'valid'),
-#         ])
-
-#         mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
-#         if mollie_provider and mollie_provider.mollie_api_key:
-#             headers = {
-#                 "Authorization": f"Bearer {mollie_provider.mollie_api_key}",
-#                 "Content-Type": "application/json",
-#             }
-#             for order in orders:
-#                 payload = {
-#                     "amount": {
-#                         "currency": "EUR", 
-#                         "value": f"{round(order.amount_total,2):.2f}",
-#                     },
-#                     "customerId": order.partner_id.mollie_customer_id,
-#                     "mandateId": order.partner_id.mollie_mandate_id,
-#                     "description": f"Subscription renewal for {order.name}",
-#                     "sequenceType": "recurring",
-#                     "metadata": {"order_id": order.id},
-#                 }
-#                 try:
-#                     response = requests.post(
-#                         "https://api.mollie.com/v2/payments",
-#                         json=payload,
-#                         headers=headers,
-#                         timeout=15,
-#                     )
-#                     data = response.json()
-#                     if response.status_code == 201:
-#                         payment_id = data.get("id")
-#                         order.message_post(body=f"💳 Mollie payment success: {payment_id}")
-#                         order.last_payment_id = payment_id
-#                     else:
-#                         order.message_post(body=f"❌ Mollie payment failed: {data}")
-#                 except Exception as e:
-#                     _logger.exception("⚠️ Mollie exception")
-#                     order.message_post(body=f"⚠️ Mollie exception: {e}")
-
-#         # 2. Now call original Odoo subscription invoice generator
-#         _logger.info("🔁 Calling original subscription invoice cron...")
-#         return super(SaleSubscription, self)._cron_recurring_create_invoice()
+        return True
