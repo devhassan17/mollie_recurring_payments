@@ -78,10 +78,10 @@ class SaleOrder(models.Model):
     @api.model
     def _cron_recurring_create_invoice(self):
         """Extend official Odoo subscription cron with Mollie charging"""
-        today = fields.Date.context_today(self)  # safer than fields.Date.today()
+        today = fields.Date.today()
         orders = self.search([
             ('plan_id', '!=', False),
-            ('next_invoice_date', '<=', today),
+            ('next_invoice_date', '=', today),
             ('state', 'in', ['sale', 'done']),
             ('partner_id.mollie_mandate_id', '!=', False),
             ('partner_id.mollie_mandate_status', '=', 'valid'),
