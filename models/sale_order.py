@@ -144,7 +144,7 @@ class SaleOrder(models.Model):
                     continue
 
                 payment_id = data.get("id")
-                order.message_post(body=f"✅ Mollie payment successful<br/>Payment ID: <b>{payment_id}</b>")
+                order.message_post(body=f"✅ Subscription payment exported to Mollie : <br/>Payment ID: <b>{payment_id}</b>")
                 order.last_payment_id = payment_id
                 charged_orders |= order  # mark order as successfully charged
 
