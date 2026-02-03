@@ -4,20 +4,29 @@
         <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_order_form"/>
         <field name="arch" type="xml">
-
-            <notebook position="inside">
-                <page string="Mollie Mandate Details">
+            <xpath expr="//notebook" position="inside">
+                <page string="Mollie">
                     <group>
-                        <group>
-                            <field name="mollie_customer_id"/>
-                            <field name="mollie_mandate_id"/>
-                            <field name="mollie_mandate_status"/>
+                        <group string="Mandate">
+                            <field name="mollie_customer_id" readonly="1"/>
+                            <field name="mollie_mandate_id" readonly="1"/>
+                            <field name="mollie_mandate_status" readonly="1"/>
+                        </group>
+                        <group string="Last Payment">
+                            <field name="last_payment_id" readonly="1"/>
+                            <field name="mollie_last_payment_status" readonly="1"/>
+                            <field name="mollie_last_payment_paid" readonly="1"/>
+                            <field name="mollie_last_payment_amount" readonly="1"/>
+                            <field name="mollie_last_payment_paid_at" readonly="1"/>
+                            <field name="mollie_last_payment_checked_at" readonly="1"/>
+                            <button name="action_refresh_last_mollie_payment_status"
+                                    type="object"
+                                    string="Refresh Mollie Status"
+                                    class="oe_highlight"/>
                         </group>
                     </group>
                 </page>
-            </notebook>
-
+            </xpath>
         </field>
     </record>
 </odoo>
-

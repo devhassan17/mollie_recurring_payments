@@ -1,0 +1,12 @@
+<odoo>
+    <menuitem id="mollie_root_menu"
+              name="Mollie"
+              sequence="10"
+              web_icon="mollie_recurring_payments,static/description/icon.png"/>
+
+    <menuitem id="mollie_subscription_renewals_menu"
+              name="Subscription Renewals"
+              parent="mollie_root_menu"
+              action="action_mollie_subscription_renewals"
+              sequence="10"/>
+</odoo>

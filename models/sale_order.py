@@ -3,6 +3,7 @@ import requests
 import logging
 import time 
 from datetime import timedelta
+from dateutil import parser as date_parser
 
 _logger = logging.getLogger(__name__)
 
@@ -45,6 +46,15 @@ class SaleOrder(models.Model):
 
     next_payment_date = fields.Date("Next Payment Date")
     last_payment_id = fields.Char("Last Mollie Payment ID")
+
+    partner_email = fields.Char(string="Email", related="partner_id.email", store=True, readonly=True)
+
+    mollie_last_payment_status = fields.Char(string="Last Mollie Payment Status", readonly=True)
+    mollie_last_payment_paid = fields.Boolean(string="Paid", readonly=True)
+    mollie_last_payment_amount = fields.Monetary(string="Paid Amount", currency_field="currency_id", readonly=True)
+    mollie_last_payment_paid_at = fields.Datetime(string="Paid At", readonly=True)
+    mollie_last_payment_checked_at = fields.Datetime(string="Status Checked At", readonly=True)
+
     
     def _is_subscription_order(self):
         """Check if this sale order includes subscription products."""
@@ -155,4 +165,64 @@ class SaleOrder(models.Model):
                         body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
                     )
 
+        return True
+
+
+    def action_refresh_last_mollie_payment_status(self):
+        """Fetch last payment status from Mollie for dashboard and order form."""
+        mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
+        api_key = getattr(mollie_provider, 'mollie_api_key', False)
+        if not api_key:
+            return
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        for order in self:
+            payment_id = order.last_payment_id
+            if not payment_id:
+                continue
+            try:
+                resp = requests.get(f"https://api.mollie.com/v2/payments/{payment_id}", headers=headers, timeout=15)
+                if resp.status_code != 200:
+                    order.message_post(body=f"⚠️ Mollie status fetch failed for {payment_id}: {resp.text}")
+                    continue
+                data = resp.json()
+                status = data.get('status')
+                amount_value = None
+                try:
+                    amount_value = float((data.get('amount') or {}).get('value') or 0.0)
+                except Exception:
+                    amount_value = 0.0
+
+                paid_at = False
+                # Mollie returns RFC3339 timestamps like 2026-02-03T10:11:12+00:00
+                paid_at_str = data.get('paidAt') or data.get('authorizedAt') or data.get('createdAt')
+                if paid_at_str:
+                    try:
+                        paid_at = date_parser.isoparse(paid_at_str).replace(tzinfo=None)
+                    except Exception:
+                        paid_at = False
+
+                order.sudo().write({
+                    'mollie_last_payment_status': status,
+                    'mollie_last_payment_paid': True if status == 'paid' else False,
+                    'mollie_last_payment_amount': amount_value,
+                    'mollie_last_payment_paid_at': paid_at,
+                    'mollie_last_payment_checked_at': fields.Datetime.now(),
+                })
+
+            except Exception as e:
+                _logger.exception("⚠️ Mollie status exception for order %s", order.name)
+                order.message_post(body=f"⚠️ Mollie status exception: {e}")
+
+
+    @api.model
+    def cron_refresh_mollie_last_payment_status(self):
+        """Cron: refresh status for all subscription orders having a last_payment_id."""
+        orders = self.search([('last_payment_id', '!=', False), ('plan_id','!=',False), ('state','in',['sale','done'])])
+        if orders:
+            orders.action_refresh_last_mollie_payment_status()
         return True

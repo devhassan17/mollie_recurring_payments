@@ -1,19 +1,29 @@
 {
-    'name': 'mollie_recurring_payments',
-    'version': '1.5',
+    'name': 'Mollie Subscription Renewals Dashboard',
+    'version': '18.0.1.6.0',
     'category': 'Payment',
-    'summary': 'Recurring payments with Mollie iDEAL for subscriptions',
+    'summary': 'Track Odoo subscription renewals charged via Mollie (Paid/Unpaid) with a dashboard',
     'description': """
-        Enable recurring payments with Mollie iDEAL for subscription products
-        Supports mandate creation and automatic recurring charges
-    """,
-    "depends": ["base", "contacts", "sale_management", "website_sale", "payment_mollie", 'sale_subscription', 'sale'],
-    "data": [
-        "views/res_partner_views.xml",
-        "views/sale_order_views.xml",
-        "data/cron_data.xml",
+Adds a Mollie App menu in Odoo 18.
+
+- Shows all subscription renewal orders (sale orders with a subscription plan)
+- Displays Mollie last payment status (paid / failed / open / etc.)
+- Reads Mollie API to refresh payment status
+- Adds cron to refresh statuses periodically
+""",
+    'depends': [
+        'base', 'contacts', 'sale', 'sale_management',
+        'website_sale', 'payment_mollie', 'sale_subscription'
     ],
-    "installable": True,
-    "application": False,
-    "license": "LGPL-3",
+    'data': [
+        'security/ir.model.access.csv',
+        'views/mollie_menu.xml',
+        'views/mollie_dashboard_views.xml',
+        'views/res_partner_views.xml',
+        'views/sale_order_views.xml',
+        'data/cron_data.xml',
+    ],
+    'installable': True,
+    'application': True,
+    'license': 'LGPL-3',
 }
