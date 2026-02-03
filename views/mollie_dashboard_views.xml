@@ -1,23 +1,33 @@
 <odoo>
 
+    <!-- Tree View: Mollie Subscription Renewals -->
     <record id="view_mollie_subscription_renewals_tree" model="ir.ui.view">
         <field name="name">mollie.subscription.renewals.tree</field>
         <field name="model">sale.order</field>
         <field name="arch" type="xml">
-            <tree string="Mollie Subscription Renewals" default_order="next_invoice_date asc">
+            <tree string="Mollie Subscription Renewals"
+                  default_order="next_invoice_date asc"
+                  decoration-success="mollie_last_payment_paid"
+                  decoration-danger="mollie_last_payment_status in ('failed','canceled','expired')"
+                  decoration-warning="mollie_last_payment_status in ('open','pending','authorized')">
+
                 <field name="name" string="Subscription"/>
                 <field name="partner_id"/>
                 <field name="partner_email" string="Email"/>
                 <field name="amount_total"/>
+
                 <field name="next_invoice_date" string="Next Renewal"/>
+
                 <field name="last_payment_id" string="Last Mollie Payment"/>
                 <field name="mollie_last_payment_status" string="Mollie Status"/>
                 <field name="mollie_last_payment_paid" string="Paid"/>
                 <field name="mollie_last_payment_checked_at" string="Last Checked"/>
+
             </tree>
         </field>
     </record>
 
+    <!-- Action -->
     <record id="action_mollie_subscription_renewals" model="ir.actions.act_window">
         <field name="name">Subscription Renewals</field>
         <field name="res_model">sale.order</field>
@@ -25,6 +35,14 @@
         <field name="view_id" ref="view_mollie_subscription_renewals_tree"/>
         <field name="domain">[('plan_id','!=',False), ('state','in',['sale','done'])]</field>
         <field name="context">{'search_default_plan_id': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No subscription renewals found.
+            </p>
+            <p>
+                This dashboard lists Sale Orders linked to a subscription plan and shows their latest Mollie payment status.
+            </p>
+        </field>
     </record>
 
 </odoo>

@@ -17,8 +17,11 @@ Adds a Mollie App menu in Odoo 18.
     ],
     'data': [
         'security/ir.model.access.csv',
-        'views/mollie_menu.xml',
+
+        # ✅ IMPORTANT: action/view file must load BEFORE menu
         'views/mollie_dashboard_views.xml',
+        'views/mollie_menu.xml',
+
         'views/res_partner_views.xml',
         'views/sale_order_views.xml',
         'data/cron_data.xml',
