@@ -1,0 +1,171 @@
+<section>
+  <h2>Mollie Subscription Renewals Dashboard</h2>
+  <p>
+ # Mollie Recurring Payments for Odoo 18
+
+This module enables recurring payments with Mollie iDEAL for subscription products in Odoo. It provides seamless integration between Odoo's subscription management and Mollie's payment system.
+
+## Features
+
+- 🔄 Automatic subscription payment processing
+- 💳 Mollie iDEAL integration for first-time and recurring payments
+- 📝 Mandate management for recurring payments
+- 👤 Customer synchronization between Odoo and Mollie
+- ⏱️ Configurable subscription intervals (Monthly, Bi-monthly)
+- 🔔 Real-time webhook notifications for payment status
+- 📊 Payment status tracking and history
+
+## Dependencies
+
+- base
+- contacts
+- sale_management
+- website_sale
+- payment_mollie
+- sale_subscription
+- sale
+
+## Installation
+
+1. Install the official Mollie payment module (payment_mollie)
+2. Install this module (mollie_recurring_payments)
+3. Configure your Mollie API keys in Odoo
+4. Set up subscription products
+
+## Configuration
+
+### Mollie Setup
+
+1. Configure your Mollie API keys in the Payment Provider settings:
+   - Go to Accounting/Invoicing → Configuration → Payment Providers
+   - Select or create Mollie provider
+   - Enter your API keys (test and/or production)
+   - In Mollie Settings Enable SEPA Direct Debit,
+
+### Subscription Products
+
+1. Create or modify products:
+   - Enable "Recurring Invoice" on products that should be subscription-based
+   - Set up subscription plans (Monthly, Bi-monthly)
+
+### Cron Jobs
+
+The module automatically installs a daily cron job for processing subscription payments:
+- Name: "Mollie: Process Subscription Charges"
+- Interval: Daily
+- Model: mollie.subscription.cron
+
+## Features in Detail
+
+### Customer Management
+
+- Automatic creation of Mollie customers
+- Syncing of customer data between Odoo and Mollie
+- Storage of Mollie customer IDs and mandate information
+
+### Mandate Handling
+
+- Automatic mandate creation for first payments
+- Mandate status tracking
+- Manual mandate synchronization option
+
+### Payment Processing
+
+- First payment handled via iDEAL
+- Subsequent payments processed automatically
+- Payment status tracking and error handling
+- Webhook integration for real-time updates
+
+### Views and Interface
+
+- Enhanced sale order form with mandate information
+- Customer form with Mollie mandate details
+- Payment status tracking in orders
+
+## Usage
+
+### Creating a Subscription
+
+1. Create a sale order with subscription products
+2. Confirm the order
+3. Customer completes first payment via iDEAL
+4. Mandate is automatically created and stored
+5. Future payments are processed automatically
+
+### Managing Mandates
+
+- View mandate status in customer form
+- Manually sync mandates using the "Sync Mandate" button
+- Track mandate status in sale orders
+
+### Monitoring Payments
+
+- View payment history in sale orders
+- Check payment status via Mollie dashboard
+- Monitor subscription payment cron job logs
+
+## Technical Details
+
+### Models
+
+- `res.partner`: Enhanced with Mollie customer and mandate fields
+- `sale.order`: Added subscription and payment tracking fields
+- `payment.transaction`: For Auto Replacing Mollie's Official Function for mandate creation support 
+- `mollie.subscription.cron`: Handles recurring payment processing
+
+### Controllers
+
+- Webhook handler for Mollie notifications
+- Return URL handler for payment flow
+- Mandate creation and validation endpoints
+
+### Cron Jobs
+
+- Daily subscription payment processor
+- Configurable payment intervals
+- Error handling and logging
+
+## Error Handling
+
+The module includes comprehensive error handling:
+- Payment processing errors
+- API communication issues
+- Mandate validation failures
+- Customer creation problems
+
+All errors are logged and visible in:
+- Odoo system logs
+- Order chatter messages
+- Customer form notifications
+
+## Security
+
+- Secure API key handling
+- Protected webhook endpoints
+- Proper authentication for sensitive operations
+- Role-based access control
+
+## Support
+
+For issues and feature requests, please create an issue in the repository.
+
+## License
+
+This module is licensed under the LGPL-3.
+
+## Version History
+
+### 1.5 (Current)
+- Added enhanced error handling
+- Improved mandate synchronization
+- Fixed webhook processing
+- Added payment status tracking
+
+## Future Improvements
+
+- Multi-currency support
+- Advanced retry logic for failed payments
+- Enhanced reporting capabilities
+- More subscription interval options
+  </p>
+</section>
