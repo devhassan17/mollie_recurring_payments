@@ -140,7 +140,7 @@ class SaleOrder(models.Model):
 
         mollie_provider = self.env["payment.provider"].search([("code", "=", "mollie")], limit=1)
         if not mollie_provider or not mollie_provider.mollie_api_key:
-            _logger.error("❌ Mollie API key missing")
+            _logger.error("❌ Mollie API key is missing")
             return super()._cron_recurring_create_invoice()
 
         headers = {
