@@ -70,7 +70,17 @@ class SaleOrder(models.Model):
     mollie_last_payment_paid = fields.Boolean(string="Paid", readonly=True, index=True)
     mollie_last_payment_amount = fields.Monetary(string="Paid Amount", currency_field="currency_id", readonly=True)
     mollie_last_payment_paid_at = fields.Datetime(string="Paid At", readonly=True, index=True)
+
+    # ✅ OK to update every cron (for audit/logging)
     mollie_last_payment_checked_at = fields.Datetime(string="Status Checked At", readonly=True)
+
+    # ✅ NEW: This is the stable date to use for "after 7 days unpaid" automations.
+    # It is set ONCE when Mollie status becomes unpaid and is NOT changed again until paid.
+    mollie_last_payment_unpaid_since = fields.Datetime(
+        string="Unpaid Since",
+        readonly=True,
+        index=True,
+    )
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -139,6 +149,7 @@ class SaleOrder(models.Model):
         }
 
         charged_orders = self.env["sale.order"]
+        now = fields.Datetime.now()
 
         for order in orders:
             partner = order.partner_id
@@ -164,6 +175,8 @@ class SaleOrder(models.Model):
                 )
                 data = response.json() if response.content else {}
 
+                # If Mollie call fails, DO NOT touch unpaid_since here.
+                # unpaid_since is controlled only by status refresh method.
                 if response.status_code != 201:
                     order.message_post(body=f"❌ Mollie payment failed: {data}")
                     continue
@@ -172,7 +185,9 @@ class SaleOrder(models.Model):
                 order.message_post(
                     body=f"✅ Subscription payment exported to Mollie : <br/>Payment ID: <b>{payment_id}</b>"
                 )
-                order.last_payment_id = payment_id
+
+                # Set last payment id (status refresh cron will decide paid/unpaid and unpaid_since)
+                order.sudo().write({"last_payment_id": payment_id})
                 charged_orders |= order
 
             except Exception as e:
@@ -221,6 +236,8 @@ class SaleOrder(models.Model):
 
                 data = resp.json() if resp.content else {}
                 status = data.get("status")
+                paid = True if status == "paid" else False
+                now = fields.Datetime.now()
 
                 amount_value = 0.0
                 try:
@@ -236,15 +253,25 @@ class SaleOrder(models.Model):
                     except Exception:
                         paid_at = False
 
-                order.sudo().write(
-                    {
-                        "mollie_last_payment_status": status,
-                        "mollie_last_payment_paid": True if status == "paid" else False,
-                        "mollie_last_payment_amount": amount_value,
-                        "mollie_last_payment_paid_at": paid_at,
-                        "mollie_last_payment_checked_at": fields.Datetime.now(),
-                    }
-                )
+                # ✅ Freeze unpaid_since while unpaid:
+                # - if unpaid_since is already set, NEVER update it again until paid.
+                vals = {
+                    "mollie_last_payment_status": status,
+                    "mollie_last_payment_paid": paid,
+                    "mollie_last_payment_amount": amount_value,
+                    "mollie_last_payment_paid_at": paid_at,
+                    "mollie_last_payment_checked_at": now,  # ok to update every run
+                }
+
+                if paid:
+                    # payment recovered, clear unpaid_since
+                    vals["mollie_last_payment_unpaid_since"] = False
+                else:
+                    # set unpaid_since only once
+                    if not order.mollie_last_payment_unpaid_since:
+                        vals["mollie_last_payment_unpaid_since"] = now
+
+                order.sudo().write(vals)
 
             except Exception as e:
                 _logger.exception("⚠️ Mollie status exception for order %s", order.name)
