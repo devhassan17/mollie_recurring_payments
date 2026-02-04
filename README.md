@@ -166,7 +166,3 @@ This module is licensed under the LGPL-3.
 - More subscription interval options
 
 
-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
-
-
-GDWELCOME
