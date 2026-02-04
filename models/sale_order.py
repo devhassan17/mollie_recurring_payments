@@ -186,8 +186,13 @@ class SaleOrder(models.Model):
                     body=f"✅ Subscription payment exported to Mollie : <br/>Payment ID: <b>{payment_id}</b>"
                 )
 
-                # Set last payment id (status refresh cron will decide paid/unpaid and unpaid_since)
-                order.sudo().write({"last_payment_id": payment_id})
+                # ✅ New renewal payment created => reset the unpaid timer so automation starts fresh
+                order.sudo().write({
+                    "last_payment_id": payment_id,
+                    "mollie_last_payment_unpaid_since": False,   # important
+                    "mollie_last_payment_paid": False,           # optional but recommended
+                    "mollie_last_payment_status": "open",        # optional (or False)
+                })
                 charged_orders |= order
 
             except Exception as e:

@@ -1,6 +1,6 @@
 {
     'name': 'Mollie Subscription Renewals Dashboard',
-    'version': '18.0.1.9.0',
+    'version': '18.0.2.0.0',
     'category': 'Payment',
     'summary': 'Track Odoo subscription renewals charged via Mollie (Paid/Unpaid) with a dashboard',
     'description': """
