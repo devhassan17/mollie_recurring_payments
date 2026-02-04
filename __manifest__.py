@@ -13,7 +13,7 @@ Adds a Mollie App menu in Odoo 18.
 """,
     'depends': [
         'base', 'contacts', 'sale', 'sale_management',
-        'website_sale', 'payment_mollie', 'sale_subscription'
+        'website_sale', 'payment_mollie', 'sale_subscription' , "marketing_automation"
     ],
     'data': [
         'security/ir.model.access.csv',
