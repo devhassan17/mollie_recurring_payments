@@ -55,3 +55,24 @@ class MollieRecurringController(http.Controller):
     def handle_return(self, **kwargs):
         _logger.info("Mollie return URL hit with params: %s", kwargs)
         return request.redirect('/shop/confirmation')
+
+    @http.route('/mollie/subscription/webhook', type='http', auth="public", csrf=False, methods=['POST'])
+    def handle_subscription_webhook(self, **kwargs):
+        """Handle Mollie webhook for subscription payments"""
+        _logger.info("SUBSCRIPTION WEBHOOK CALLED")
+        
+        payment_id = kwargs.get("id")
+        if not payment_id:
+            return "no id", 400
+
+        # Search for the sale order associated with this payment ID
+        # The cron writes last_payment_id to the sale order
+        order = request.env['sale.order'].sudo().search([('last_payment_id', '=', payment_id)], limit=1)
+        
+        if order:
+            _logger.info("Processing subscription webhook for order %s and payment %s", order.name, payment_id)
+            order.action_refresh_last_mollie_payment_status()
+        else:
+            _logger.warning("No order found for payment ID %s", payment_id)
+            
+        return "ok"

@@ -271,6 +271,11 @@ class SaleOrder(models.Model):
                 if paid:
                     # payment recovered, clear unpaid_since
                     vals["mollie_last_payment_unpaid_since"] = False
+                    
+                    # Process database payment/invoice reconciliation if purely status check reveals it's paid
+                    # This handles the case where webhook hits OR manual refresh hits
+                    # We check if we need to reconcile
+                    order._process_mollie_payment_success(payment_id, amount_value)
                 else:
                     # set unpaid_since only once
                     if not order.mollie_last_payment_unpaid_since:
@@ -281,6 +286,65 @@ class SaleOrder(models.Model):
             except Exception as e:
                 _logger.exception("⚠️ Mollie status exception for order %s", order.name)
                 order.message_post(body=f"⚠️ Mollie status exception: {e}")
+
+    def _process_mollie_payment_success(self, payment_id, amount_value):
+        """Process successful Mollie payment: create payment and reconcile invoice."""
+        self.ensure_one()
+        _logger.info("Processing successful payment %s for order %s", payment_id, self.name)
+        
+        # Find unpaid posted invoices
+        invoices = self.invoice_ids.filtered(lambda inv: inv.state == 'posted' and inv.payment_state not in ('paid', 'in_payment'))
+        
+        if not invoices:
+            _logger.info("No unpaid invoices found for order %s to reconcile with payment %s", self.name, payment_id)
+            return
+
+        # Use the latest invoice if multiple exist (subscription logic usually creates one at a time)
+        # Prioritize the one matching the amount if possible, or just the latest
+        invoice = invoices.sorted('id', reverse=True)[:1]
+        
+        if not invoice:
+            return
+
+        # Check if already paid to avoid double payment
+        # (Though we filtered for not paid/in_payment, double check if we just paid it in this transaction?)
+        # Odoo's payment registration wizard handles this usually.
+        
+        # Get a journal. Try to find a Bank journal.
+        journal = self.env['account.journal'].search([('type', '=', 'bank')], limit=1)
+        if not journal:
+            _logger.error("No bank journal found to register payment for order %s", self.name)
+            return
+
+        # Create payment
+        payment_method_line = journal.inbound_payment_method_line_ids[:1]
+        
+        try:
+            payment_vals = {
+                'date': fields.Date.context_today(self),
+                'amount': amount_value,
+                'payment_type': 'inbound',
+                'partner_type': 'customer',
+                'partner_id': self.partner_id.id,
+                'journal_id': journal.id,
+                'currency_id': self.currency_id.id,
+                'payment_method_line_id': payment_method_line.id,
+                'ref': f"Mollie Subscription Payment {payment_id}",
+            }
+            payment = self.env['account.payment'].create(payment_vals)
+            payment.action_post()
+            
+            # Reconcile
+            (invoice.line_ids + payment.line_ids).filtered(
+                lambda line: line.account_id == invoice.line_ids.filtered(
+                    lambda l: l.account_type == 'asset_receivable'
+                ).account_id
+            ).reconcile()
+            
+            _logger.info("Successfully registered payment %s for invoice %s", payment.name, invoice.name)
+            
+        except Exception as e:
+            _logger.exception("Failed to register payment for order %s: %s", self.name, str(e))
 
     @api.model
     def cron_refresh_mollie_last_payment_status(self):
