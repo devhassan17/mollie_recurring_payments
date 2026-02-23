@@ -10,11 +10,11 @@ class AccountMove(models.Model):
         index=True
     )
 
-    @api.depends('invoice_line_ids.sale_line_ids.order_id')
+    @api.depends('invoice_line_ids.sale_line_ids.order_id.mollie_last_payment_status')
     def _compute_mollie_from_so(self):
         for move in self:
             move.mollie_last_payment_status = False
-            sale_orders = move.invoice_line_ids.sale_line_ids.order_id
-            so = sale_orders[:1]
-            if so:
+            sale_orders = move.mapped('invoice_line_ids.sale_line_ids.order_id')
+            if sale_orders:
+                so = sale_orders[:1]
                 move.mollie_last_payment_status = so.mollie_last_payment_status
