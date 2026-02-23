@@ -1,6 +1,6 @@
 {
     'name': 'Mollie Subscription Renewals Dashboard',
-    'version': '18.0.2.1.0',
+    'version': '18.0.2.2.0',
     'category': 'Payment',
     'summary': 'Track Odoo subscription renewals charged via Mollie (Paid/Unpaid) with a dashboard',
     'description': """
@@ -13,7 +13,7 @@ Adds a Mollie App menu in Odoo 18.
 """,
     'depends': [
         'base', 'contacts', 'sale', 'sale_management',
-        'website_sale', 'payment_mollie', 'sale_subscription' , "marketing_automation"
+        'website_sale', 'payment_mollie', 'sale_subscription' , "marketing_automation" , "account",
     ],
     'data': [
         'security/ir.model.access.csv',
