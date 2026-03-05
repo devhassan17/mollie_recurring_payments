@@ -12,8 +12,7 @@ class SaleOrder(models.Model):
     _inherit = "sale.order"
 
     # -------------------------------------------------------------------------
-    # 🔥 IMPORTANT UPDATE FOR MARKETING AUTOMATION DOMAINS:
-    # These related fields MUST be stored to appear in domain filters reliably.
+    # Stored related fields for domain filters
     # -------------------------------------------------------------------------
     mollie_customer_id = fields.Char(
         string="Mollie Customer ID",
@@ -70,12 +69,8 @@ class SaleOrder(models.Model):
     mollie_last_payment_paid = fields.Boolean(string="Paid", readonly=True, index=True)
     mollie_last_payment_amount = fields.Monetary(string="Paid Amount", currency_field="currency_id", readonly=True)
     mollie_last_payment_paid_at = fields.Datetime(string="Paid At", readonly=True, index=True)
-
-    # ✅ OK to update every cron (for audit/logging)
     mollie_last_payment_checked_at = fields.Datetime(string="Status Checked At", readonly=True)
 
-    # ✅ NEW: This is the stable date to use for "after 7 days unpaid" automations.
-    # It is set ONCE when Mollie status becomes unpaid and is NOT changed again until paid.
     mollie_last_payment_unpaid_since = fields.Datetime(
         string="Unpaid Since",
         readonly=True,
@@ -90,15 +85,7 @@ class SaleOrder(models.Model):
         return any(line.product_id.recurring_invoice for line in self.order_line)
 
     def _mollie_subscription_base_domain(self, today=None):
-        """
-        Base domain for "subscriptions we are allowed to charge".
-
-        IMPORTANT:
-        - Churned subscriptions can still be in state sale/done and still have next_invoice_date,
-          so we must explicitly exclude churn/closed/cancelled lifecycle states when possible.
-        """
         today = today or fields.Date.today()
-
         domain = [
             ("plan_id", "!=", False),
             ("next_invoice_date", "=", today),
@@ -107,8 +94,6 @@ class SaleOrder(models.Model):
             ("partner_id.mollie_mandate_status", "=", "valid"),
         ]
 
-        # ✅ Exclude churned/closed subscriptions (field name differs per version/customization)
-        # We do it dynamically so your module doesn't crash if the field doesn't exist.
         exclude_states = ["churn", "churned", "closed", "cancelled", "canceled", "done"]
 
         if "subscription_state" in self._fields:
@@ -121,12 +106,6 @@ class SaleOrder(models.Model):
         return domain
 
     def _mollie_subscription_status_refresh_domain(self):
-        """
-        Domain for status refresh cron:
-        - Must have last_payment_id
-        - Must be a subscription order
-        - Must NOT be churned/closed/cancelled (same reasoning)
-        """
         domain = [
             ("last_payment_id", "!=", False),
             ("plan_id", "!=", False),
@@ -148,7 +127,6 @@ class SaleOrder(models.Model):
     # Confirm flow: fetch mandate after confirm
     # -------------------------------------------------------------------------
     def action_confirm(self):
-        """When a sale order is confirmed, create Mollie customer + mandate."""
         res = super().action_confirm()
 
         for order in self:
@@ -175,10 +153,7 @@ class SaleOrder(models.Model):
     # -------------------------------------------------------------------------
     @api.model
     def _cron_recurring_create_invoice(self):
-        """Extend official Odoo subscription cron with Mollie charging."""
         today = fields.Date.today()
-
-        # ✅ UPDATED: use helper domain to exclude churned/closed subs
         orders = self.search(self._mollie_subscription_base_domain(today=today))
 
         if not orders:
@@ -223,8 +198,6 @@ class SaleOrder(models.Model):
                 )
                 data = response.json() if response.content else {}
 
-                # If Mollie call fails, DO NOT touch unpaid_since here.
-                # unpaid_since is controlled only by status refresh method.
                 if response.status_code != 201:
                     order.message_post(body=f"❌ Mollie payment failed: {data}")
                     continue
@@ -234,12 +207,11 @@ class SaleOrder(models.Model):
                     body=f"✅ Subscription payment exported to Mollie : <br/>Payment ID: <b>{payment_id}</b>"
                 )
 
-                # ✅ New renewal payment created => reset the unpaid timer so automation starts fresh
                 order.sudo().write({
                     "last_payment_id": payment_id,
-                    "mollie_last_payment_unpaid_since": False,   # important
-                    "mollie_last_payment_paid": False,           # optional but recommended
-                    "mollie_last_payment_status": "open",        # optional (or False)
+                    "mollie_last_payment_unpaid_since": False,
+                    "mollie_last_payment_paid": False,
+                    "mollie_last_payment_status": "open",
                 })
                 charged_orders |= order
 
@@ -247,7 +219,6 @@ class SaleOrder(models.Model):
                 _logger.exception("⚠️ Mollie exception for %s", order.name)
                 order.message_post(body=f"⚠️ Mollie exception: {e}")
 
-        # Create invoices only for successfully charged orders
         if charged_orders:
             _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
             super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
@@ -262,10 +233,10 @@ class SaleOrder(models.Model):
         return True
 
     # -------------------------------------------------------------------------
-    # Manual + cron refresh payment status (for Marketing Automation triggers too)
+    # Manual + webhook + cron refresh payment status
     # -------------------------------------------------------------------------
     def action_refresh_last_mollie_payment_status(self):
-        """Fetch last payment status from Mollie for dashboard and order form."""
+        """Fetch last payment status from Mollie and apply accounting when paid."""
         mollie_provider = self.env["payment.provider"].search([("code", "=", "mollie")], limit=1)
         api_key = getattr(mollie_provider, "mollie_api_key", False)
         if not api_key:
@@ -282,7 +253,11 @@ class SaleOrder(models.Model):
                 continue
 
             try:
-                resp = requests.get(f"https://api.mollie.com/v2/payments/{payment_id}", headers=headers, timeout=15)
+                resp = requests.get(
+                    f"https://api.mollie.com/v2/payments/{payment_id}",
+                    headers=headers,
+                    timeout=15
+                )
                 if resp.status_code != 200:
                     order.message_post(body=f"⚠️ Mollie status fetch failed for {payment_id}: {resp.text}")
                     continue
@@ -306,26 +281,20 @@ class SaleOrder(models.Model):
                     except Exception:
                         paid_at = False
 
-                # ✅ Freeze unpaid_since while unpaid:
-                # - if unpaid_since is already set, NEVER update it again until paid.
                 vals = {
                     "mollie_last_payment_status": status,
                     "mollie_last_payment_paid": paid,
                     "mollie_last_payment_amount": amount_value,
                     "mollie_last_payment_paid_at": paid_at,
-                    "mollie_last_payment_checked_at": now,  # ok to update every run
+                    "mollie_last_payment_checked_at": now,
                 }
 
                 if paid:
-                    # payment recovered, clear unpaid_since
                     vals["mollie_last_payment_unpaid_since"] = False
 
-                    # Process database payment/invoice reconciliation if purely status check reveals it's paid
-                    # This handles the case where webhook hits OR manual refresh hits
-                    # We check if we need to reconcile
+                    # ✅ This is the key: when Mollie becomes paid later, we apply payment & reconcile
                     order._process_mollie_payment_success(payment_id, amount_value)
                 else:
-                    # set unpaid_since only once
                     if not order.mollie_last_payment_unpaid_since:
                         vals["mollie_last_payment_unpaid_since"] = now
 
@@ -336,63 +305,96 @@ class SaleOrder(models.Model):
                 order.message_post(body=f"⚠️ Mollie status exception: {e}")
 
     def _process_mollie_payment_success(self, payment_id, amount_value):
-        """Process successful Mollie payment: create payment and reconcile invoice."""
+        """
+        Process successful Mollie payment:
+        - prevent duplicates
+        - create account.payment
+        - post + reconcile with latest unpaid invoice
+        -> invoice.payment_state becomes paid automatically
+        """
         self.ensure_one()
-        _logger.info("Processing successful payment %s for order %s", payment_id, self.name)
+        _logger.info("✅ Processing Mollie payment success payment_id=%s order=%s", payment_id, self.name)
 
-        # Find unpaid posted invoices
-        invoices = self.invoice_ids.filtered(lambda inv: inv.state == 'posted' and inv.payment_state not in ('paid', 'in_payment'))
+        # 0) If payment already processed, stop (idempotency)
+        existing_payment = self.env["account.payment"].sudo().search([
+            ("mollie_payment_id", "=", payment_id),
+            ("state", "in", ("posted", "reconciled")),
+        ], limit=1)
+        if existing_payment:
+            _logger.info("⏭️ Mollie payment %s already processed in Odoo (%s).", payment_id, existing_payment.name)
+            return True
 
+        # 1) Find latest posted invoice that is not paid
+        invoices = self.invoice_ids.filtered(lambda inv: inv.state == "posted" and inv.payment_state != "paid")
         if not invoices:
-            _logger.info("No unpaid invoices found for order %s to reconcile with payment %s", self.name, payment_id)
-            return
+            _logger.info("⏭️ No posted unpaid invoices for order %s", self.name)
+            return True
 
-        # Use the latest invoice if multiple exist (subscription logic usually creates one at a time)
-        invoice = invoices.sorted('id', reverse=True)[:1]
-
+        invoice = invoices.sorted("id", reverse=True)[:1]
         if not invoice:
-            return
+            return True
+        invoice = invoice[0]
 
-        # Get a journal. Try to find a Bank journal.
-        journal = self.env['account.journal'].search([('type', '=', 'bank')], limit=1)
+        # If already paid (double safety)
+        if invoice.payment_state == "paid":
+            return True
+
+        # 2) Select a bank journal
+        journal = self.env["account.journal"].search([("type", "=", "bank")], limit=1)
         if not journal:
-            _logger.error("No bank journal found to register payment for order %s", self.name)
-            return
+            _logger.error("❌ No bank journal found to register payment for order %s", self.name)
+            return False
 
-        # Create payment
+        # 3) Payment method line
         payment_method_line = journal.inbound_payment_method_line_ids[:1]
+        if not payment_method_line:
+            _logger.error("❌ No inbound payment method line on journal %s", journal.display_name)
+            return False
+
+        # 4) Amount: safer to use invoice residual (in case Mollie sent full but invoice has rounding/partial)
+        pay_amount = invoice.amount_residual
+        if amount_value and amount_value > 0:
+            # If invoice residual is zero or less (rare), fallback to Mollie
+            pay_amount = invoice.amount_residual or amount_value
 
         try:
             payment_vals = {
-                'date': fields.Date.context_today(self),
-                'amount': amount_value,
-                'payment_type': 'inbound',
-                'partner_type': 'customer',
-                'partner_id': self.partner_id.id,
-                'journal_id': journal.id,
-                'currency_id': self.currency_id.id,
-                'payment_method_line_id': payment_method_line.id,
-                'ref': f"Mollie Subscription Payment {payment_id}",
+                "date": fields.Date.context_today(self),
+                "amount": pay_amount,
+                "payment_type": "inbound",
+                "partner_type": "customer",
+                "partner_id": self.partner_id.id,
+                "journal_id": journal.id,
+                "currency_id": invoice.currency_id.id,
+                "payment_method_line_id": payment_method_line.id,
+                "ref": f"Mollie Subscription Payment {payment_id}",
+                "mollie_payment_id": payment_id,
             }
-            payment = self.env['account.payment'].create(payment_vals)
+
+            payment = self.env["account.payment"].sudo().create(payment_vals)
             payment.action_post()
 
-            # Reconcile
-            (invoice.line_ids + payment.line_ids).filtered(
-                lambda line: line.account_id == invoice.line_ids.filtered(
-                    lambda l: l.account_type == 'asset_receivable'
-                ).account_id
-            ).reconcile()
+            # 5) Reconcile receivable lines properly
+            inv_recv_lines = invoice.line_ids.filtered(
+                lambda l: l.account_id.account_type == "asset_receivable" and not l.reconciled
+            )
+            pay_recv_lines = payment.move_id.line_ids.filtered(
+                lambda l: l.account_id.account_type == "asset_receivable" and not l.reconciled
+            )
 
-            _logger.info("Successfully registered payment %s for invoice %s", payment.name, invoice.name)
+            lines_to_reconcile = inv_recv_lines | pay_recv_lines
+            if lines_to_reconcile:
+                lines_to_reconcile.reconcile()
+
+            _logger.info("✅ Payment %s posted and reconciled with invoice %s", payment.name, invoice.name)
+            return True
 
         except Exception as e:
-            _logger.exception("Failed to register payment for order %s: %s", self.name, str(e))
+            _logger.exception("❌ Failed to register Mollie payment for order %s: %s", self.name, str(e))
+            return False
 
     @api.model
     def cron_refresh_mollie_last_payment_status(self):
-        """Cron: refresh status for all subscription orders having a last_payment_id."""
-        # ✅ UPDATED: exclude churned/closed subs here too
         orders = self.search(self._mollie_subscription_status_refresh_domain())
         if orders:
             orders.action_refresh_last_mollie_payment_status()
