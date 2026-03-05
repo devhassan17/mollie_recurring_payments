@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="1">
+
+        <!-- ❌ Disabled: Custom Mollie charging cron
+             Charging is already handled in sale_order.py via
+             _cron_recurring_create_invoice() -->
         <record id="cron_mollie_subscription_charges" model="ir.cron">
             <field name="name">Mollie: Process Subscription Charges</field>
             <field name="model_id" ref="model_mollie_subscription_cron"/>
@@ -8,10 +12,11 @@
             <field name="code">model.run_subscription_charges()</field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
-            <field name="active">True</field>
+            <field name="active">False</field>
             <field name="user_id" ref="base.user_root"/>
         </record>
 
+        <!-- ✅ Keep this cron active: refresh Mollie payment status -->
         <record id="cron_mollie_refresh_last_payment_status" model="ir.cron">
             <field name="name">Mollie: Refresh Last Payment Status</field>
             <field name="model_id" ref="sale.model_sale_order"/>
@@ -22,5 +27,6 @@
             <field name="active">True</field>
             <field name="user_id" ref="base.user_root"/>
         </record>
+
     </data>
 </odoo>
