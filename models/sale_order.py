@@ -84,6 +84,56 @@ class SaleOrder(models.Model):
         """Check if this sale order includes subscription products."""
         return any(line.product_id.recurring_invoice for line in self.order_line)
 
+    def _get_blocked_subscription_keywords(self):
+        return ["churn", "closed", "cancel", "pause", "hold", "stop"]
+
+    def _safe_text_contains_blocked_status(self, value):
+        value = (value or "").strip().lower()
+        if not value:
+            return False
+        return any(keyword in value for keyword in self._get_blocked_subscription_keywords())
+
+    def _is_subscription_charge_blocked(self):
+        """
+        Extra runtime safety check.
+        Stops churned / paused / closed / cancelled subscriptions from being sent to Mollie
+        even if domain filters miss some customization/version-specific field.
+        """
+        self.ensure_one()
+
+        blocked_boolean_fields = [
+            "is_paused",
+            "paused",
+            "subscription_paused",
+            "to_close",
+            "is_closed",
+        ]
+        for field_name in blocked_boolean_fields:
+            if field_name in self._fields and bool(self[field_name]):
+                return True
+
+        blocked_text_fields = [
+            "subscription_state",
+            "subscription_status",
+            "stage_category",
+            "state",
+        ]
+        for field_name in blocked_text_fields:
+            if field_name in self._fields and self._safe_text_contains_blocked_status(self[field_name]):
+                return True
+
+        if "stage_id" in self._fields and self.stage_id:
+            stage_parts = [
+                getattr(self.stage_id, "name", ""),
+                getattr(self.stage_id, "category", ""),
+                getattr(self.stage_id, "code", ""),
+            ]
+            stage_text = " ".join([part for part in stage_parts if part])
+            if self._safe_text_contains_blocked_status(stage_text):
+                return True
+
+        return False
+
     def _mollie_subscription_base_domain(self, today=None):
         today = today or fields.Date.today()
         domain = [
@@ -94,14 +144,26 @@ class SaleOrder(models.Model):
             ("partner_id.mollie_mandate_status", "=", "valid"),
         ]
 
-        exclude_states = ["churn", "churned", "closed", "cancelled", "canceled", "done"]
+        exclude_states = ["churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause"]
 
         if "subscription_state" in self._fields:
             domain += [("subscription_state", "not in", exclude_states)]
         if "subscription_status" in self._fields:
             domain += [("subscription_status", "not in", exclude_states)]
+        if "stage_category" in self._fields:
+            domain += [("stage_category", "not in", exclude_states)]
         if "is_subscription" in self._fields:
             domain += [("is_subscription", "=", True)]
+        if "is_paused" in self._fields:
+            domain += [("is_paused", "=", False)]
+        if "paused" in self._fields:
+            domain += [("paused", "=", False)]
+        if "subscription_paused" in self._fields:
+            domain += [("subscription_paused", "=", False)]
+        if "to_close" in self._fields:
+            domain += [("to_close", "=", False)]
+        if "is_closed" in self._fields:
+            domain += [("is_closed", "=", False)]
 
         return domain
 
@@ -112,16 +174,83 @@ class SaleOrder(models.Model):
             ("state", "in", ["sale", "done"]),
         ]
 
-        exclude_states = ["churn", "churned", "closed", "cancelled", "canceled", "done"]
+        exclude_states = ["churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause"]
 
         if "subscription_state" in self._fields:
             domain += [("subscription_state", "not in", exclude_states)]
         if "subscription_status" in self._fields:
             domain += [("subscription_status", "not in", exclude_states)]
+        if "stage_category" in self._fields:
+            domain += [("stage_category", "not in", exclude_states)]
         if "is_subscription" in self._fields:
             domain += [("is_subscription", "=", True)]
+        if "is_paused" in self._fields:
+            domain += [("is_paused", "=", False)]
+        if "paused" in self._fields:
+            domain += [("paused", "=", False)]
+        if "subscription_paused" in self._fields:
+            domain += [("subscription_paused", "=", False)]
+        if "to_close" in self._fields:
+            domain += [("to_close", "=", False)]
+        if "is_closed" in self._fields:
+            domain += [("is_closed", "=", False)]
 
         return domain
+
+    def _mollie_api_request(self, method, url, headers=None, json=None, timeout=15, max_retries=3):
+        """
+        Wrapper for Mollie API calls with 429 retry handling.
+        """
+        headers = headers or {}
+        last_response = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    json=json,
+                    timeout=timeout,
+                )
+                last_response = response
+
+                if response.status_code != 429:
+                    return response
+
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    wait_seconds = int(retry_after) if retry_after else 60
+                except Exception:
+                    wait_seconds = 60
+
+                _logger.warning(
+                    "⚠️ Mollie rate limit hit on %s %s. Attempt %s/%s. Waiting %s seconds.",
+                    method,
+                    url,
+                    attempt + 1,
+                    max_retries + 1,
+                    wait_seconds,
+                )
+
+                if attempt >= max_retries:
+                    return response
+
+                time.sleep(wait_seconds)
+
+            except requests.RequestException:
+                if attempt >= max_retries:
+                    raise
+                wait_seconds = 5 * (attempt + 1)
+                _logger.warning(
+                    "⚠️ Mollie request exception on %s %s. Retrying in %s seconds.",
+                    method,
+                    url,
+                    wait_seconds,
+                )
+                time.sleep(wait_seconds)
+
+        return last_response
 
     # -------------------------------------------------------------------------
     # Confirm flow: fetch mandate after confirm
@@ -174,7 +303,12 @@ class SaleOrder(models.Model):
 
         charged_orders = self.env["sale.order"]
 
-        for order in orders:
+        for index, order in enumerate(orders, start=1):
+            if order._is_subscription_charge_blocked():
+                _logger.info("⏭️ Skipping blocked subscription order %s", order.name)
+                order.message_post(body="⏭️ Skipped Mollie export because subscription is churned / paused / closed.")
+                continue
+
             partner = order.partner_id
             amount = round(order.amount_total, 2)
 
@@ -190,16 +324,24 @@ class SaleOrder(models.Model):
             _logger.info("💳 Charging %s for %s EUR (Order %s)", partner.name, amount, order.name)
 
             try:
-                response = requests.post(
-                    "https://api.mollie.com/v2/payments",
+                response = order._mollie_api_request(
+                    method="POST",
+                    url="https://api.mollie.com/v2/payments",
                     json=payload,
                     headers=headers,
                     timeout=15,
+                    max_retries=3,
                 )
-                data = response.json() if response.content else {}
+                data = response.json() if response and response.content else {}
 
-                if response.status_code != 201:
+                if not response or response.status_code != 201:
                     order.message_post(body=f"❌ Mollie payment failed: {data}")
+                    _logger.error("❌ Mollie payment failed for %s: %s", order.name, data)
+
+                    # If Mollie is still rate-limiting after retries, stop loop cleanly
+                    if response and response.status_code == 429:
+                        _logger.warning("🛑 Stopping current batch due to Mollie 429 after retries.")
+                        break
                     continue
 
                 payment_id = data.get("id")
@@ -214,6 +356,10 @@ class SaleOrder(models.Model):
                     "mollie_last_payment_status": "open",
                 })
                 charged_orders |= order
+
+                # Small delay to reduce burst requests
+                if index < len(orders):
+                    time.sleep(2)
 
             except Exception as e:
                 _logger.exception("⚠️ Mollie exception for %s", order.name)
@@ -253,13 +399,16 @@ class SaleOrder(models.Model):
                 continue
 
             try:
-                resp = requests.get(
-                    f"https://api.mollie.com/v2/payments/{payment_id}",
+                resp = order._mollie_api_request(
+                    method="GET",
+                    url=f"https://api.mollie.com/v2/payments/{payment_id}",
                     headers=headers,
-                    timeout=15
+                    timeout=15,
+                    max_retries=3,
                 )
-                if resp.status_code != 200:
-                    order.message_post(body=f"⚠️ Mollie status fetch failed for {payment_id}: {resp.text}")
+                if not resp or resp.status_code != 200:
+                    text = resp.text if resp else "No response"
+                    order.message_post(body=f"⚠️ Mollie status fetch failed for {payment_id}: {text}")
                     continue
 
                 data = resp.json() if resp.content else {}
@@ -291,8 +440,6 @@ class SaleOrder(models.Model):
 
                 if paid:
                     vals["mollie_last_payment_unpaid_since"] = False
-
-                    # ✅ This is the key: when Mollie becomes paid later, we apply payment & reconcile
                     order._process_mollie_payment_success(payment_id, amount_value)
                 else:
                     if not order.mollie_last_payment_unpaid_since:
@@ -315,7 +462,6 @@ class SaleOrder(models.Model):
         self.ensure_one()
         _logger.info("✅ Processing Mollie payment success payment_id=%s order=%s", payment_id, self.name)
 
-        # 0) If payment already processed, stop (idempotency)
         existing_payment = self.env["account.payment"].sudo().search([
             ("mollie_payment_id", "=", payment_id),
             ("state", "in", ("posted", "reconciled")),
@@ -324,7 +470,6 @@ class SaleOrder(models.Model):
             _logger.info("⏭️ Mollie payment %s already processed in Odoo (%s).", payment_id, existing_payment.name)
             return True
 
-        # 1) Find latest posted invoice that is not paid
         invoices = self.invoice_ids.filtered(lambda inv: inv.state == "posted" and inv.payment_state != "paid")
         if not invoices:
             _logger.info("⏭️ No posted unpaid invoices for order %s", self.name)
@@ -335,26 +480,21 @@ class SaleOrder(models.Model):
             return True
         invoice = invoice[0]
 
-        # If already paid (double safety)
         if invoice.payment_state == "paid":
             return True
 
-        # 2) Select a bank journal
         journal = self.env["account.journal"].search([("type", "=", "bank")], limit=1)
         if not journal:
             _logger.error("❌ No bank journal found to register payment for order %s", self.name)
             return False
 
-        # 3) Payment method line
         payment_method_line = journal.inbound_payment_method_line_ids[:1]
         if not payment_method_line:
             _logger.error("❌ No inbound payment method line on journal %s", journal.display_name)
             return False
 
-        # 4) Amount: safer to use invoice residual (in case Mollie sent full but invoice has rounding/partial)
         pay_amount = invoice.amount_residual
         if amount_value and amount_value > 0:
-            # If invoice residual is zero or less (rare), fallback to Mollie
             pay_amount = invoice.amount_residual or amount_value
 
         try:
@@ -374,7 +514,6 @@ class SaleOrder(models.Model):
             payment = self.env["account.payment"].sudo().create(payment_vals)
             payment.action_post()
 
-            # 5) Reconcile receivable lines properly
             inv_recv_lines = invoice.line_ids.filtered(
                 lambda l: l.account_id.account_type == "asset_receivable" and not l.reconciled
             )
