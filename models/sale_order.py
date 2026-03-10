@@ -368,25 +368,56 @@ class SaleOrder(models.Model):
         if charged_orders:
             _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
 
+            # ── Temporarily patch validate_and_send_invoice to skip broken PDF/email step ──
+            # The invoice PDF template has an IndentationError (Studio customization bug).
+            # We skip email sending here — invoices can be sent manually or separately.
+            original_send = type(charged_orders[0]).validate_and_send_invoice
+
+            def _safe_validate_and_send(self_order, invoice):
+                try:
+                    original_send(self_order, invoice)
+                except Exception:
+                    _logger.warning(
+                        "⚠️ Email/PDF send failed for invoice %s (non-critical — skipping). "
+                        "Fix the invoice PDF template to restore auto-email.",
+                        invoice.name,
+                    )
+
+            type(charged_orders[0]).validate_and_send_invoice = _safe_validate_and_send
             try:
                 super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
-                _logger.info("✅ Invoices created for %d order(s)", len(charged_orders))
+                _logger.info("✅ Invoices created successfully for %d order(s)", len(charged_orders))
             except Exception:
-                _logger.exception("⚠️ Invoice creation failed for one or more charged orders. Mollie charges were successful — payment will be reconciled by the 5-min status refresh cron.")
+                _logger.exception("⚠️ Invoice creation failed — will attempt manual reconciliation below")
+            finally:
+                # Always restore the original method
+                type(charged_orders[0]).validate_and_send_invoice = original_send
 
-            # Add payment note to each newly generated invoice (best-effort, doesn't affect accounting)
+            # ── Immediately reconcile each invoice with its Mollie payment ──
             for order in charged_orders:
                 try:
+                    self.env.flush_all()
                     order.invalidate_recordset(['invoice_ids'])
-                    invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
-                    if invoice and invoice.state == 'posted':
-                        invoice.message_post(
-                            body=f"💳 Mollie Subscription Payment Pending<br/>Mollie Payment ID: <b>{order.last_payment_id}</b><br/>Invoice will be reconciled by the status refresh cron."
-                        )
-                        _logger.info("📋 Payment note added to invoice %s for order %s", invoice.name, order.name)
-                except Exception:
-                    _logger.exception("⚠️ Could not add payment note to invoice for order %s", order.name)
+                    invoice = order.invoice_ids.filtered(
+                        lambda inv: inv.state == 'posted' and inv.payment_state not in ('in_payment', 'paid', 'reversed')
+                    ).sorted("id", reverse=True)[:1]
 
+                    if not invoice:
+                        _logger.warning("⚠️ No posted unpaid invoice found for order %s — refresh cron will retry", order.name)
+                        continue
+
+                    _logger.info("💰 Reconciling invoice %s for order %s with Mollie payment %s", invoice.name, order.name, order.last_payment_id)
+
+                    # Add payment note
+                    invoice.message_post(
+                        body=f"💳 Mollie Subscription Payment<br/>Payment ID: <b>{order.last_payment_id}</b>"
+                    )
+
+                    # Immediately reconcile
+                    order._process_mollie_payment_success(order.last_payment_id, invoice.amount_total)
+
+                except Exception:
+                    _logger.exception("⚠️ Could not reconcile invoice for order %s — refresh cron will retry", order.name)
 
         return True
 
