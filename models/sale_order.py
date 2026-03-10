@@ -372,9 +372,13 @@ class SaleOrder(models.Model):
             for order in charged_orders:
                 invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
                 if invoice:
+                    if invoice.state == 'draft':
+                        invoice.action_post()
                     invoice.message_post(
                         body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
                     )
+                    # Instantly process payment to avoid webhook race conditions leaving it unpaid
+                    order._process_mollie_payment_success(order.last_payment_id, amount_value=False)
 
         return True
 
@@ -470,9 +474,9 @@ class SaleOrder(models.Model):
             _logger.info("⏭️ Mollie payment %s already processed in Odoo (%s).", payment_id, existing_payment.name)
             return True
 
-        invoices = self.invoice_ids.filtered(lambda inv: inv.state == "posted" and inv.payment_state != "paid")
+        invoices = self.invoice_ids.filtered(lambda inv: inv.state in ("draft", "posted") and inv.payment_state not in ("in_payment", "paid"))
         if not invoices:
-            _logger.info("⏭️ No posted unpaid invoices for order %s", self.name)
+            _logger.info("⏭️ No draft/posted unpaid invoices for order %s", self.name)
             return True
 
         invoice = invoices.sorted("id", reverse=True)[:1]
@@ -480,7 +484,10 @@ class SaleOrder(models.Model):
             return True
         invoice = invoice[0]
 
-        if invoice.payment_state == "paid":
+        if invoice.state == "draft":
+            invoice.action_post()
+
+        if invoice.payment_state in ("in_payment", "paid"):
             return True
 
         journal = self.env["account.journal"].search([("type", "=", "bank")], limit=1)
