@@ -369,44 +369,14 @@ class SaleOrder(models.Model):
             _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
 
             for order in charged_orders:
-                payment_id = order.last_payment_id
-
-                # ── SAVEPOINT 1: invoice creation (Monta hooks run here and may fail)
-                # ── Even if this savepoint rolls back, the Mollie charge is still committed.
-                invoice = None
                 try:
-                    with self.env.cr.savepoint():
-                        _logger.info("📄 Creating invoice for order %s ...", order.name)
-                        super(SaleOrder, order)._cron_recurring_create_invoice()
-                        self.env.flush_all()
-                        order.invalidate_recordset(['invoice_ids'])
-                        inv = order.invoice_ids.sorted("id", reverse=True)[:1]
-                        _logger.info("🔍 Invoice after creation for order %s: %s (state=%s)", order.name, inv.name if inv else 'NONE', inv.state if inv else 'N/A')
-                        invoice = inv or None
+                    # Create the invoice via Odoo's native subscription cron (Monta hooks may run/fail here)
+                    _logger.info("📄 Creating invoice for order %s ...", order.name)
+                    super(SaleOrder, order)._cron_recurring_create_invoice()
+                    _logger.info("✅ Invoice created for order %s", order.name)
                 except Exception:
-                    _logger.exception("⚠️ Invoice creation savepoint aborted for order %s (Monta or other hook failed — will still attempt payment registration)", order.name)
+                    _logger.exception("⚠️ Invoice creation failed for order %s (Monta or other hook). Mollie charge was successful — payment will be reconciled by the status refresh cron.", order.name)
 
-                # ── SAVEPOINT 2: payment registration (independent of savepoint 1)
-                # ── Re-read invoice from DB regardless of what happened above
-                try:
-                    with self.env.cr.savepoint():
-                        self.env.flush_all()
-                        order.invalidate_recordset(['invoice_ids'])
-                        fresh_invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
-                        _logger.info("💰 Payment registration check for order %s: invoice=%s", order.name, fresh_invoice.name if fresh_invoice else 'NONE')
-
-                        if fresh_invoice:
-                            if fresh_invoice.state == 'draft':
-                                _logger.info("📌 Auto-posting draft invoice %s", fresh_invoice.name)
-                                fresh_invoice.action_post()
-                            fresh_invoice.message_post(
-                                body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{payment_id}</b>"
-                            )
-                            order._process_mollie_payment_success(payment_id, amount_value=fresh_invoice.amount_total)
-                        else:
-                            _logger.warning("⚠️ No invoice found for order %s in payment registration step — will rely on webhook/cron poll", order.name)
-                except Exception:
-                    _logger.exception("⚠️ Payment registration savepoint failed for order %s", order.name)
 
         return True
 
