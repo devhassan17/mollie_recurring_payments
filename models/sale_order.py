@@ -369,30 +369,44 @@ class SaleOrder(models.Model):
             _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
 
             for order in charged_orders:
-                # ── Per-order savepoint: Monta or any other hook failing here
-                # ── will NOT roll back the Mollie charge or other orders.
+                payment_id = order.last_payment_id
+
+                # ── SAVEPOINT 1: invoice creation (Monta hooks run here and may fail)
+                # ── Even if this savepoint rolls back, the Mollie charge is still committed.
+                invoice = None
                 try:
                     with self.env.cr.savepoint():
                         _logger.info("📄 Creating invoice for order %s ...", order.name)
                         super(SaleOrder, order)._cron_recurring_create_invoice()
-
+                        self.env.flush_all()
                         order.invalidate_recordset(['invoice_ids'])
-                        invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
-                        _logger.info("🔍 Invoice after creation for order %s: %s (state=%s)", order.name, invoice.name if invoice else 'NONE', invoice.state if invoice else 'N/A')
-
-                        if invoice:
-                            if invoice.state == 'draft':
-                                _logger.info("📌 Auto-posting draft invoice %s", invoice.name)
-                                invoice.action_post()
-                            invoice.message_post(
-                                body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
-                            )
-                            order._process_mollie_payment_success(order.last_payment_id, amount_value=invoice.amount_total)
-                        else:
-                            _logger.warning("⚠️ No invoice found for order %s — will rely on webhook/cron poll", order.name)
-
+                        inv = order.invoice_ids.sorted("id", reverse=True)[:1]
+                        _logger.info("🔍 Invoice after creation for order %s: %s (state=%s)", order.name, inv.name if inv else 'NONE', inv.state if inv else 'N/A')
+                        invoice = inv or None
                 except Exception:
-                    _logger.exception("⚠️ Exception during invoice/payment processing for order %s (Mollie charge was successful)", order.name)
+                    _logger.exception("⚠️ Invoice creation savepoint aborted for order %s (Monta or other hook failed — will still attempt payment registration)", order.name)
+
+                # ── SAVEPOINT 2: payment registration (independent of savepoint 1)
+                # ── Re-read invoice from DB regardless of what happened above
+                try:
+                    with self.env.cr.savepoint():
+                        self.env.flush_all()
+                        order.invalidate_recordset(['invoice_ids'])
+                        fresh_invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
+                        _logger.info("💰 Payment registration check for order %s: invoice=%s", order.name, fresh_invoice.name if fresh_invoice else 'NONE')
+
+                        if fresh_invoice:
+                            if fresh_invoice.state == 'draft':
+                                _logger.info("📌 Auto-posting draft invoice %s", fresh_invoice.name)
+                                fresh_invoice.action_post()
+                            fresh_invoice.message_post(
+                                body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{payment_id}</b>"
+                            )
+                            order._process_mollie_payment_success(payment_id, amount_value=fresh_invoice.amount_total)
+                        else:
+                            _logger.warning("⚠️ No invoice found for order %s in payment registration step — will rely on webhook/cron poll", order.name)
+                except Exception:
+                    _logger.exception("⚠️ Payment registration savepoint failed for order %s", order.name)
 
         return True
 
