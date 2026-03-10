@@ -477,20 +477,25 @@ class SaleOrder(models.Model):
         self.ensure_one()
         _logger.info("✅ Processing Mollie payment success payment_id=%s order=%s", payment_id, self.name)
 
+        # Duplicate check: use move_id.state (Odoo 17+/18 — account.payment.state != 'posted')
         existing_payment = self.env["account.payment"].sudo().search([
             ("mollie_payment_id", "=", payment_id),
-            ("state", "in", ("posted", "cancel")),
         ], limit=1)
-        if existing_payment:
-            _logger.info("⏭️ Mollie payment %s already processed in Odoo (%s).", payment_id, existing_payment.name)
+        if existing_payment and existing_payment.move_id and existing_payment.move_id.state in ("posted",):
+            _logger.info("⏭️ Mollie payment %s already posted in Odoo (%s).", payment_id, existing_payment.name)
             return True
+        elif existing_payment:
+            _logger.info("🔁 Found existing payment %s but state=%s — will attempt reconciliation again.", existing_payment.name, existing_payment.move_id.state if existing_payment.move_id else 'no move')
 
         # Force a fresh database read of invoice_ids to avoid stale cache
+        self.env.flush_all()
         self.invalidate_recordset(['invoice_ids'])
-        invoices = self.invoice_ids.filtered(lambda inv: inv.state in ("draft", "posted") and inv.payment_state not in ("in_payment", "paid"))
+        all_invoices = self.invoice_ids
+        _logger.info("🔍 All invoice_ids for order %s: %s", self.name, all_invoices.mapped(lambda i: f'{i.name}(state={i.state},pay_state={i.payment_state})'))
+        invoices = all_invoices.filtered(lambda inv: inv.state in ("draft", "posted") and inv.payment_state not in ("in_payment", "paid", "reversed"))
         _logger.info("🔍 Invoices eligible for reconciliation on order %s: %s", self.name, invoices.mapped('name'))
         if not invoices:
-            _logger.info("⏭️ No draft/posted unpaid invoices for order %s", self.name)
+            _logger.warning("⚠️ No eligible invoices for order %s — all are already paid or there are no invoices.", self.name)
             return True
 
         invoice = invoices.sorted("id", reverse=True)[:1]
@@ -546,7 +551,9 @@ class SaleOrder(models.Model):
             if lines_to_reconcile:
                 lines_to_reconcile.reconcile()
 
-            _logger.info("✅ Payment %s posted and reconciled with invoice %s", payment.name, invoice.name)
+            _logger.info("✅ Payment %s posted and reconciled with invoice %s (payment_state=%s)", payment.name, invoice.name, invoice.payment_state)
+            invoice.invalidate_recordset(['payment_state'])
+            _logger.info("✅ Invoice %s payment_state after reconcile: %s", invoice.name, invoice.payment_state)
             return True
 
         except Exception as e:
