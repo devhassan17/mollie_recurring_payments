@@ -550,54 +550,34 @@ class SaleOrder(models.Model):
             _logger.error("❌ No inbound payment method line on journal %s", journal.display_name)
             return False
 
-        pay_amount = invoice.amount_residual
-        if amount_value and amount_value > 0:
-            pay_amount = invoice.amount_residual or amount_value
+        pay_amount = invoice.amount_residual or amount_value
 
         try:
-            payment_vals = {
-                "date": fields.Date.context_today(self),
-                "amount": pay_amount,
-                "payment_type": "inbound",
-                "partner_type": "customer",
-                "partner_id": self.partner_id.id,
-                "journal_id": journal.id,
-                "currency_id": invoice.currency_id.id,
-                "payment_method_line_id": payment_method_line.id,
-                "memo": f"Mollie Subscription Payment {payment_id}",
-                "mollie_payment_id": payment_id,
-            }
+            # Use Odoo's native payment register wizard — handles all journal configurations
+            # (including Outstanding Receipts transit accounts) and auto-reconciles with invoice.
+            payment_register = self.env['account.payment.register'].with_context(
+                active_model='account.move',
+                active_ids=invoice.ids,
+            ).sudo().create({
+                'payment_date': fields.Date.context_today(self),
+                'amount': pay_amount,
+                'journal_id': journal.id,
+                'payment_method_line_id': payment_method_line.id,
+            })
+            payments = payment_register._create_payments()
 
-            payment = self.env["account.payment"].sudo().create(payment_vals)
-            payment.action_post()
-
-            # Flush ORM writes so that journal entry lines are visible
-            self.env.flush_all()
-
-            inv_recv_lines = invoice.line_ids.filtered(
-                lambda l: l.account_id.reconcile and not l.reconciled
-            )
-            pay_recv_lines = payment.move_id.line_ids.filtered(
-                lambda l: l.account_id.reconcile and not l.reconciled
-            )
-
-            _logger.info(
-                "🔗 Receivable lines — invoice: %s | payment: %s",
-                [(l.account_id.code, l.debit, l.credit, l.reconciled) for l in inv_recv_lines],
-                [(l.account_id.code, l.debit, l.credit, l.reconciled) for l in pay_recv_lines],
-            )
-
-            lines_to_reconcile = inv_recv_lines | pay_recv_lines
-            if lines_to_reconcile:
-                lines_to_reconcile.reconcile()
-                _logger.info("🔗 reconcile() called on %d lines", len(lines_to_reconcile))
-            else:
-                _logger.warning("⚠️ No reconcilable lines found — payment created but not linked to invoice")
+            # Tag the created payment(s) with the Mollie payment ID for future deduplication
+            if payments:
+                payments.sudo().write({'mollie_payment_id': payment_id})
+                _logger.info("🏷️ Tagged payment(s) %s with mollie_payment_id=%s", payments.mapped('name'), payment_id)
 
             invoice.invalidate_recordset(['payment_state', 'amount_residual'])
-            _logger.info("✅ Payment %s posted | Invoice %s payment_state=%s amount_residual=%s",
-                         payment.name, invoice.name, invoice.payment_state, invoice.amount_residual)
+            _logger.info(
+                "✅ Mollie payment reconciled | Invoice %s payment_state=%s amount_residual=%s",
+                invoice.name, invoice.payment_state, invoice.amount_residual,
+            )
             return True
+
 
         except Exception as e:
             _logger.exception("❌ Failed to register Mollie payment for order %s: %s", self.name, str(e))
