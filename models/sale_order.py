@@ -571,25 +571,38 @@ class SaleOrder(models.Model):
             payment = self.env["account.payment"].sudo().create(payment_vals)
             payment.action_post()
 
+            # Flush ORM writes so that journal entry lines are visible
+            self.env.flush_all()
+
             inv_recv_lines = invoice.line_ids.filtered(
-                lambda l: l.account_id.account_type == "asset_receivable" and not l.reconciled
+                lambda l: l.account_id.reconcile and not l.reconciled
             )
             pay_recv_lines = payment.move_id.line_ids.filtered(
-                lambda l: l.account_id.account_type == "asset_receivable" and not l.reconciled
+                lambda l: l.account_id.reconcile and not l.reconciled
+            )
+
+            _logger.info(
+                "🔗 Receivable lines — invoice: %s | payment: %s",
+                [(l.account_id.code, l.debit, l.credit, l.reconciled) for l in inv_recv_lines],
+                [(l.account_id.code, l.debit, l.credit, l.reconciled) for l in pay_recv_lines],
             )
 
             lines_to_reconcile = inv_recv_lines | pay_recv_lines
             if lines_to_reconcile:
                 lines_to_reconcile.reconcile()
+                _logger.info("🔗 reconcile() called on %d lines", len(lines_to_reconcile))
+            else:
+                _logger.warning("⚠️ No reconcilable lines found — payment created but not linked to invoice")
 
-            _logger.info("✅ Payment %s posted and reconciled with invoice %s (payment_state=%s)", payment.name, invoice.name, invoice.payment_state)
-            invoice.invalidate_recordset(['payment_state'])
-            _logger.info("✅ Invoice %s payment_state after reconcile: %s", invoice.name, invoice.payment_state)
+            invoice.invalidate_recordset(['payment_state', 'amount_residual'])
+            _logger.info("✅ Payment %s posted | Invoice %s payment_state=%s amount_residual=%s",
+                         payment.name, invoice.name, invoice.payment_state, invoice.amount_residual)
             return True
 
         except Exception as e:
             _logger.exception("❌ Failed to register Mollie payment for order %s: %s", self.name, str(e))
             return False
+
 
     @api.model
     def cron_refresh_mollie_last_payment_status(self):
