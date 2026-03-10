@@ -564,7 +564,7 @@ class SaleOrder(models.Model):
                 "journal_id": journal.id,
                 "currency_id": invoice.currency_id.id,
                 "payment_method_line_id": payment_method_line.id,
-                "ref": f"Mollie Subscription Payment {payment_id}",
+                "memo": f"Mollie Subscription Payment {payment_id}",
                 "mollie_payment_id": payment_id,
             }
 
