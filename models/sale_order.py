@@ -540,9 +540,13 @@ class SaleOrder(models.Model):
         if invoice.payment_state in ("in_payment", "paid"):
             return True
 
-        journal = self.env["account.journal"].search([("type", "=", "bank")], limit=1)
+        invoice_company = invoice.company_id or self.company_id
+        journal = self.env["account.journal"].with_company(invoice_company).search([
+            ("type", "=", "bank"),
+            ("company_id", "=", invoice_company.id),
+        ], limit=1)
         if not journal:
-            _logger.error("❌ No bank journal found to register payment for order %s", self.name)
+            _logger.error("❌ No bank journal found for company %s (order %s)", invoice_company.name, self.name)
             return False
 
         payment_method_line = journal.inbound_payment_method_line_ids[:1]
@@ -555,7 +559,7 @@ class SaleOrder(models.Model):
         try:
             # Use Odoo's native payment register wizard — handles all journal configurations
             # (including Outstanding Receipts transit accounts) and auto-reconciles with invoice.
-            payment_register = self.env['account.payment.register'].with_context(
+            payment_register = self.env['account.payment.register'].with_company(invoice_company).with_context(
                 active_model='account.move',
                 active_ids=invoice.ids,
             ).sudo().create({
