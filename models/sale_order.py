@@ -368,14 +368,24 @@ class SaleOrder(models.Model):
         if charged_orders:
             _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
 
+            try:
+                super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
+                _logger.info("✅ Invoices created for %d order(s)", len(charged_orders))
+            except Exception:
+                _logger.exception("⚠️ Invoice creation failed for one or more charged orders. Mollie charges were successful — payment will be reconciled by the 5-min status refresh cron.")
+
+            # Add payment note to each newly generated invoice (best-effort, doesn't affect accounting)
             for order in charged_orders:
                 try:
-                    # Create the invoice via Odoo's native subscription cron (Monta hooks may run/fail here)
-                    _logger.info("📄 Creating invoice for order %s ...", order.name)
-                    super(SaleOrder, order)._cron_recurring_create_invoice()
-                    _logger.info("✅ Invoice created for order %s", order.name)
+                    order.invalidate_recordset(['invoice_ids'])
+                    invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
+                    if invoice and invoice.state == 'posted':
+                        invoice.message_post(
+                            body=f"💳 Mollie Subscription Payment Pending<br/>Mollie Payment ID: <b>{order.last_payment_id}</b><br/>Invoice will be reconciled by the status refresh cron."
+                        )
+                        _logger.info("📋 Payment note added to invoice %s for order %s", invoice.name, order.name)
                 except Exception:
-                    _logger.exception("⚠️ Invoice creation failed for order %s (Monta or other hook). Mollie charge was successful — payment will be reconciled by the status refresh cron.", order.name)
+                    _logger.exception("⚠️ Could not add payment note to invoice for order %s", order.name)
 
 
         return True
