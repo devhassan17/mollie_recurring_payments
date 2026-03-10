@@ -54,8 +54,8 @@ class MollieRecurringController(http.Controller):
                 partner.sudo().write({
                     'mollie_mandate_id': mand,
                     'mollie_transaction_id': payment_id,
-                    # If paid/authorized then mandate is valid
-                    "mollie_mandate_status": "valid" if status in ("paid", "authorized") else status
+                    # If paid/authorized/pending then mandate is valid
+                    "mollie_mandate_status": "valid" if status in ("paid", "authorized", "pending") else status
                 })
                 _logger.info("Webhook updated partner %s with mandate %s", partner.name, mand)
 

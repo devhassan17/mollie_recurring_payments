@@ -417,7 +417,10 @@ class SaleOrder(models.Model):
 
                 data = resp.json() if resp.content else {}
                 status = data.get("status")
-                paid = True if status == "paid" else False
+                
+                # SEPA Direct Debits (esp. in test mode) are often 'pending' for several days
+                # We consider them successful in Odoo if they are paid, authorized, or pending
+                paid = True if status in ("paid", "authorized", "pending") else False
                 now = fields.Datetime.now()
 
                 amount_value = 0.0
