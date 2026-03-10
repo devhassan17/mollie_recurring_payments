@@ -372,14 +372,22 @@ class SaleOrder(models.Model):
             for order in charged_orders:
                 order.invalidate_recordset(['invoice_ids'])
                 invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
+                _logger.info("🔍 Found invoice for order %s: %s (state=%s)", order.name, invoice.name if invoice else 'NONE', invoice.state if invoice else 'N/A')
                 if invoice:
                     if invoice.state == 'draft':
+                        _logger.info("📄 Auto-posting draft invoice %s", invoice.name)
                         invoice.action_post()
                     invoice.message_post(
                         body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
                     )
-                    # Instantly process payment to avoid webhook race conditions leaving it unpaid
-                    order._process_mollie_payment_success(order.last_payment_id, amount_value=False)
+                    # Instantly process payment inside a savepoint so Monta/other failures can't rollback our reconciliation
+                    try:
+                        with self.env.cr.savepoint():
+                            order._process_mollie_payment_success(order.last_payment_id, amount_value=invoice.amount_total)
+                    except Exception:
+                        _logger.exception("⚠️ Failed to process payment success for order %s inside savepoint", order.name)
+                else:
+                    _logger.warning("⚠️ No invoice found for order %s after creating invoices — will rely on webhook/cron poll", order.name)
 
         return True
 
@@ -472,13 +480,16 @@ class SaleOrder(models.Model):
 
         existing_payment = self.env["account.payment"].sudo().search([
             ("mollie_payment_id", "=", payment_id),
-            ("state", "in", ("posted", "reconciled")),
+            ("state", "in", ("posted", "cancel")),
         ], limit=1)
         if existing_payment:
             _logger.info("⏭️ Mollie payment %s already processed in Odoo (%s).", payment_id, existing_payment.name)
             return True
 
+        # Force a fresh database read of invoice_ids to avoid stale cache
+        self.invalidate_recordset(['invoice_ids'])
         invoices = self.invoice_ids.filtered(lambda inv: inv.state in ("draft", "posted") and inv.payment_state not in ("in_payment", "paid"))
+        _logger.info("🔍 Invoices eligible for reconciliation on order %s: %s", self.name, invoices.mapped('name'))
         if not invoices:
             _logger.info("⏭️ No draft/posted unpaid invoices for order %s", self.name)
             return True
