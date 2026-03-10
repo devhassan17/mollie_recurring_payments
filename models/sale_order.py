@@ -370,6 +370,7 @@ class SaleOrder(models.Model):
             super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
 
             for order in charged_orders:
+                order.invalidate_recordset(['invoice_ids'])
                 invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
                 if invoice:
                     if invoice.state == 'draft':
