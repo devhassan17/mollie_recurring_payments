@@ -490,12 +490,51 @@ class SaleOrder(models.Model):
                 else:
                     if not order.mollie_last_payment_unpaid_since:
                         vals["mollie_last_payment_unpaid_since"] = now
+                    # If status is terminal failure, reverse any Odoo payment already created
+                    if status in ("failed", "canceled", "expired"):
+                        order._process_mollie_payment_failure(payment_id, status)
 
                 order.sudo().write(vals)
 
             except Exception as e:
                 _logger.exception("⚠️ Mollie status exception for order %s", order.name)
                 order.message_post(body=f"⚠️ Mollie status exception: {e}")
+
+    def _process_mollie_payment_failure(self, payment_id, status):
+        """
+        Reverse an Odoo payment that was created for a Mollie payment which subsequently
+        failed/cancelled/expired. This un-reconciles the invoice and resets it to Not Paid.
+        """
+        self.ensure_one()
+        _logger.info("⚠️ Mollie payment %s is '%s' — checking if reversal is needed for order %s", payment_id, status, self.name)
+
+        existing_payment = self.env["account.payment"].sudo().search([
+            ("mollie_payment_id", "=", payment_id),
+        ], limit=1)
+
+        if not existing_payment:
+            _logger.info("ℹ️ No Odoo payment found for Mollie payment %s — nothing to reverse", payment_id)
+            return
+
+        if not existing_payment.move_id or existing_payment.move_id.state != "posted":
+            _logger.info("ℹ️ Payment %s is not posted (state=%s) — skipping reversal",
+                         existing_payment.name,
+                         existing_payment.move_id.state if existing_payment.move_id else 'no move')
+            return
+
+        try:
+            # action_cancel() on account.payment reverses the journal entry and un-reconciles
+            existing_payment.sudo().action_cancel()
+            _logger.info("🔄 Payment %s cancelled/reversed for Mollie payment %s (status=%s)",
+                         existing_payment.name, payment_id, status)
+            self.message_post(
+                body=f"🔴 Mollie payment <b>{payment_id}</b> was <b>{status}</b>.<br/>"
+                     f"Odoo payment <b>{existing_payment.name}</b> has been reversed.<br/>"
+                     f"Invoice is back to <b>Not Paid</b> — please retry or contact customer."
+            )
+        except Exception:
+            _logger.exception("❌ Failed to reverse Odoo payment %s for Mollie payment %s",
+                              existing_payment.name, payment_id)
 
     def _process_mollie_payment_success(self, payment_id, amount_value):
         """
