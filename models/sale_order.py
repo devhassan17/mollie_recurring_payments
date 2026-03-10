@@ -367,27 +367,32 @@ class SaleOrder(models.Model):
 
         if charged_orders:
             _logger.info("🧾 Creating invoices for %d successfully charged subscription(s)", len(charged_orders))
-            super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
 
             for order in charged_orders:
-                order.invalidate_recordset(['invoice_ids'])
-                invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
-                _logger.info("🔍 Found invoice for order %s: %s (state=%s)", order.name, invoice.name if invoice else 'NONE', invoice.state if invoice else 'N/A')
-                if invoice:
-                    if invoice.state == 'draft':
-                        _logger.info("📄 Auto-posting draft invoice %s", invoice.name)
-                        invoice.action_post()
-                    invoice.message_post(
-                        body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
-                    )
-                    # Instantly process payment inside a savepoint so Monta/other failures can't rollback our reconciliation
-                    try:
-                        with self.env.cr.savepoint():
+                # ── Per-order savepoint: Monta or any other hook failing here
+                # ── will NOT roll back the Mollie charge or other orders.
+                try:
+                    with self.env.cr.savepoint():
+                        _logger.info("📄 Creating invoice for order %s ...", order.name)
+                        super(SaleOrder, order)._cron_recurring_create_invoice()
+
+                        order.invalidate_recordset(['invoice_ids'])
+                        invoice = order.invoice_ids.sorted("id", reverse=True)[:1]
+                        _logger.info("🔍 Invoice after creation for order %s: %s (state=%s)", order.name, invoice.name if invoice else 'NONE', invoice.state if invoice else 'N/A')
+
+                        if invoice:
+                            if invoice.state == 'draft':
+                                _logger.info("📌 Auto-posting draft invoice %s", invoice.name)
+                                invoice.action_post()
+                            invoice.message_post(
+                                body=f"💳 Paid via Mollie Subscription<br/>Payment ID: <b>{order.last_payment_id}</b>"
+                            )
                             order._process_mollie_payment_success(order.last_payment_id, amount_value=invoice.amount_total)
-                    except Exception:
-                        _logger.exception("⚠️ Failed to process payment success for order %s inside savepoint", order.name)
-                else:
-                    _logger.warning("⚠️ No invoice found for order %s after creating invoices — will rely on webhook/cron poll", order.name)
+                        else:
+                            _logger.warning("⚠️ No invoice found for order %s — will rely on webhook/cron poll", order.name)
+
+                except Exception:
+                    _logger.exception("⚠️ Exception during invoice/payment processing for order %s (Mollie charge was successful)", order.name)
 
         return True
 
