@@ -10,46 +10,48 @@ class PaymentTransaction(models.Model):
     def _mollie_prepare_payment_request_payload(self):
         """ Override of payment to prepare Mollie payment request payload with subscription support. """
         payload = super()._mollie_prepare_payment_request_payload()
-        partner = self.partner_id
         
-        mollie_provider = self.env['payment.provider'].search([('code', '=', 'mollie')], limit=1)
-        api_key = mollie_provider.mollie_api_key
-        
-        order = self.env['sale.order'].search([('name', '=', self.reference)], limit=1)
-        is_subscription_order = any(line.product_id.recurring_invoice for line in order.order_line)
-        
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        # Odoo 17/18: self.sale_order_ids is the standard way to get linked orders
+        order = self.sale_order_ids[:1]
+        if not order:
+            return payload
 
-        if is_subscription_order:
-            
-            customer_id = partner.mollie_customer_id
-            
-            if not customer_id:
+        is_subscription_order = any(line.product_id.recurring_invoice for line in order.order_line)
+        if not is_subscription_order:
+            return payload
+
+        partner = self.partner_id
+        mollie_provider = self.provider_id
+        if not mollie_provider or not mollie_provider.mollie_api_key:
+            return payload
+
+        headers = {
+            "Authorization": f"Bearer {mollie_provider.mollie_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        customer_id = partner.mollie_customer_id
+        if not customer_id:
+            try:
                 customer_payload = {
                     "name": partner.name,
                     "email": partner.email,
                     "metadata": {"odoo_partner_id": partner.id},
                 }
-                resp = requests.post("https://api.mollie.com/v2/customers", json=customer_payload, headers=headers)
+                resp = requests.post("https://api.mollie.com/v2/customers", json=customer_payload, headers=headers, timeout=10)
                 if resp.status_code == 201:
-                    partner.mollie_customer_id = resp.json().get("id")
                     customer_id = resp.json().get("id")
-                    _logger.info("Created Mollie customer for %s", partner.name)
-                else:
-                    _logger.error("Customer creation failed: %s", resp.text)
+                    partner.sudo().write({"mollie_customer_id": customer_id})
+                    _logger.info("Created Mollie customer %s for partner %s", customer_id, partner.name)
+            except Exception as e:
+                _logger.error("Mollie customer creation exception: %s", str(e))
 
-                payload.update({
-                    'sequenceType': 'first',
-                    'customerId': customer_id,
-                })
-
-                partner.action_fetch_mollie_mandate()
-            else:
-                payload.update({
-                    'sequenceType': 'first',
-                    'customerId': customer_id,
-                })
-
-                partner.action_fetch_mollie_mandate()
+        if customer_id:
+            payload.update({
+                'sequenceType': 'first',
+                'customerId': customer_id,
+            })
+            # Ensure mandate is fetched (asynchronously/queued in a real production, but here we trigger sync)
+            partner.action_fetch_mollie_mandate()
               
         return payload
