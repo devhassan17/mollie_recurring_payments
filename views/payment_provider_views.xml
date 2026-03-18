@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="payment_provider_form_view_mollie_voucher" model="ir.ui.view">
+        <field name="name">payment.provider.form.mollie.voucher</field>
+        <field name="model">payment.provider</field>
+        <field name="inherit_id" ref="payment.payment_provider_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Voucher Configuration" invisible="code != 'mollie'">
+                    <group>
+                        <field name="mollie_use_vouchers"/>
+                    </group>
+                    <field name="mollie_voucher_ids" invisible="not mollie_use_vouchers">
+                        <list editable="bottom">
+                            <field name="category_id"/>
+                            <field name="mollie_voucher_type"/>
+                        </list>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

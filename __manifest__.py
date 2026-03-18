@@ -25,12 +25,13 @@ Key Features:
     'data': [
         'security/ir.model.access.csv',
 
-        # ✅ IMPORTANT: action/view file must load BEFORE menu
+        
         'views/mollie_dashboard_views.xml',
         'views/mollie_menu.xml',
 
         'views/res_partner_views.xml',
         'views/sale_order_views.xml',
+        'views/payment_provider_views.xml',
         'data/cron_data.xml',
     ],
     'installable': True,
