@@ -24,3 +24,10 @@ class PaymentProvider(models.Model):
         string='Mollie: Use Vouchers', 
         help='If enabled, line items with categories will be sent to Mollie.'
     )
+
+    def _get_supported_payment_method_codes(self):
+        """ Override to include 'giftcard' in supported Mollie methods. """
+        codes = super()._get_supported_payment_method_codes()
+        if self.code == 'mollie':
+            codes.append('giftcard')
+        return codes
