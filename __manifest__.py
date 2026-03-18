@@ -1,15 +1,22 @@
 {
-    'name': 'Mollie Subscription Renewals Dashboard',
+    'name': 'Mollie Subscription Renewals Dashboard & Recurring Payments',
     'version': '18.0.4.1.0',
     'category': 'Payment',
-    'summary': 'Track Odoo subscription renewals charged via Mollie (Paid/Unpaid) with a dashboard',
+    'author': 'Managemyweb.co',
+    'website': 'https://managemyweb.co',
+    'maintainer': 'ali@moyeecoffee.com',
+    'summary': 'Automated Odoo 18 subscription renewals with Mollie. Includes dashboard, mandate sync, and intelligent auto-reconciliation.',
     'description': """
-Adds a Mollie App menu in Odoo 18.
+Mollie Recurring Payments for Odoo 18 Subscriptions.
 
-- Shows all subscription renewal orders (sale orders with a subscription plan)
-- Displays Mollie last payment status (paid / failed / open / etc.)
-- Reads Mollie API to refresh payment status
-- Adds cron to refresh statuses periodically
+Key Features:
+- **Subscription Renewals Dashboard**: Real-time tracking of upcoming renewals and Mollie payment statuses (Paid, Failed, Pending, etc.).
+- **Automated Mandate & Customer Sync**: Automatically fetches and verifies Mollie mandates upon sale order confirmation.
+- **Background Recurring Charges**: Cron-driven processing that charges Mollie mandates and creates Odoo invoices automatically.
+- **Intelligent Accounting**: Automatically reconciles posted invoices with successful Mollie payments.
+- **Payment Reversal on Failure**: Automatically reverses Odoo payments if Mollie status changes to Failed, Canceled, or Expired.
+- **Real-time Updates**: Webhook support for instant mandate and payment status synchronization.
+- **Charge Safety**: Prevents charging for churned, paused, or closed subscriptions.
 """,
     'depends': [
         'base', 'contacts', 'sale', 'sale_management',
