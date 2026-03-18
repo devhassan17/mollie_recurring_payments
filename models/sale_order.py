@@ -132,6 +132,13 @@ class SaleOrder(models.Model):
             if self._safe_text_contains_blocked_status(stage_text):
                 return True
 
+        # 🛑 End Date Protection: Stop if the subscription has already reached its end date
+        today = fields.Date.today()
+        for field_name in ["end_date", "date_end"]:
+            if field_name in self._fields and self[field_name] and self[field_name] < today:
+                _logger.info("⏭️ Subscription %s is blocked because its end date (%s) has passed.", self.name, self[field_name])
+                return True
+
         return False
 
     def _mollie_subscription_base_domain(self, today=None):
@@ -164,6 +171,11 @@ class SaleOrder(models.Model):
             domain += [("to_close", "=", False)]
         if "is_closed" in self._fields:
             domain += [("is_closed", "=", False)]
+
+        # 🛑 Domain level end-date check: Ensure we don't pick up subscriptions past their end date
+        for field_name in ["end_date", "date_end"]:
+            if field_name in self._fields:
+                domain += ["|", (field_name, "=", False), (field_name, ">=", today)]
 
         return domain
 
