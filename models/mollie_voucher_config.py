@@ -31,3 +31,12 @@ class PaymentProvider(models.Model):
         if self.code == 'mollie':
             codes.append('giftcard')
         return codes
+
+    def _mollie_ensure_giftcard_support(self):
+        """ Link giftcard method to mollie provider if not already linked. """
+        mollie_providers = self.search([('code', '=', 'mollie')])
+        gift_card_method = self.env['payment.method'].search([('code', '=', 'giftcard')], limit=1)
+        if gift_card_method and mollie_providers:
+            for provider in mollie_providers:
+                if gift_card_method not in provider.payment_method_ids:
+                    provider.write({'payment_method_ids': [(4, gift_card_method.id)]})
