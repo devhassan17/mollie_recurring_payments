@@ -72,11 +72,20 @@ class PaymentTransaction(models.Model):
                 mollie_category = voucher_mapping.get(line.product_id.categ_id.id)
                 
                 # Mollie rule: totalAmount = unitPrice × quantity (ALL tax-excluded)
-                # vatAmount is added on top separately.
+                # vatAmount MUST be derived from totalAmount using Mollie's formula:
+                #   vatAmount = totalAmount × (vatRate / (100 + vatRate))
+                # Using price_total - price_subtotal causes rounding drift because
+                # Odoo's price_total is computed from original unitPrice, not our rounded totalAmount.
                 unit_price = round(line.price_unit, 2)
                 qty = int(line.product_uom_qty)
-                total_excl = round(unit_price * qty, 2)  # = price_subtotal (tax-excluded)
-                vat_amount = round(line.price_total - line.price_subtotal, 2)
+                total_excl = round(unit_price * qty, 2)  # tax-excluded total = unitPrice × qty
+                vat_rate_sum = sum(t.amount for t in line.tax_id)
+                # Mollie's exact formula to avoid vatAmount mismatch errors
+                if vat_rate_sum:
+                    vat_amount = round(total_excl * (vat_rate_sum / (100 + vat_rate_sum)), 2)
+                else:
+                    vat_amount = 0.0
+
 
                 line_data = {
                     'description': line.name,
