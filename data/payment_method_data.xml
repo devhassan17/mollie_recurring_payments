@@ -12,7 +12,5 @@
             <field name="support_refund">partial</field>
         </record>
 
-        <!-- Link method to Mollie provider -->
-        <function model="payment.provider" name="_mollie_ensure_giftcard_support"/>
     </data>
 </odoo>

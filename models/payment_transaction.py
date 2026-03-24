@@ -27,7 +27,13 @@ class PaymentTransaction(models.Model):
         }
 
         # 1. Handle Subscription metadata if applicable
-        is_subscription_order = any(line.product_id.recurring_invoice for line in order.order_line)
+        # Check both product.product and product.template for recurring_invoice (Odoo 18 compat)
+        is_subscription_order = any(
+            line.product_id.recurring_invoice or
+            (line.product_id.product_tmpl_id and line.product_id.product_tmpl_id.recurring_invoice)
+            for line in order.order_line
+            if not line.display_type
+        )
         if is_subscription_order:
             customer_id = partner.mollie_customer_id
             if not customer_id:
@@ -65,20 +71,27 @@ class PaymentTransaction(models.Model):
                 # Determine Mollie voucher category
                 mollie_category = voucher_mapping.get(line.product_id.categ_id.id)
                 
+                # Mollie rule: totalAmount = unitPrice × quantity (ALL tax-excluded)
+                # vatAmount is added on top separately.
+                unit_price = round(line.price_unit, 2)
+                qty = int(line.product_uom_qty)
+                total_excl = round(unit_price * qty, 2)  # = price_subtotal (tax-excluded)
+                vat_amount = round(line.price_total - line.price_subtotal, 2)
+
                 line_data = {
                     'description': line.name,
-                    'quantity': int(line.product_uom_qty),
+                    'quantity': qty,
                     'unitPrice': {
                         'currency': order.currency_id.name,
-                        'value': f"{line.price_unit:.2f}"
+                        'value': f"{unit_price:.2f}"
                     },
                     'totalAmount': {
                         'currency': order.currency_id.name,
-                        'value': f"{line.price_total:.2f}"
+                        'value': f"{total_excl:.2f}"  # ✅ unitPrice × qty, NOT price_total
                     },
                     'vatAmount': {
                         'currency': order.currency_id.name,
-                        'value': f"{line.price_tax:.2f}"
+                        'value': f"{vat_amount:.2f}"
                     },
                     # Mollie requires vatRate as a string (e.g. "21.00")
                     'vatRate': f"{sum(t.amount for t in line.tax_id):.2f}"
