@@ -71,32 +71,31 @@ class PaymentTransaction(models.Model):
                 # Determine Mollie voucher category
                 mollie_category = voucher_mapping.get(line.product_id.categ_id.id)
                 
-                # Mollie rule: totalAmount = unitPrice × quantity (ALL tax-excluded)
-                # vatAmount MUST be derived from totalAmount using Mollie's formula:
-                #   vatAmount = totalAmount × (vatRate / (100 + vatRate))
-                # Using price_total - price_subtotal causes rounding drift because
-                # Odoo's price_total is computed from original unitPrice, not our rounded totalAmount.
-                unit_price = round(line.price_unit, 2)
-                qty = int(line.product_uom_qty)
-                total_excl = round(unit_price * qty, 2)  # tax-excluded total = unitPrice × qty
+                # Mollie rule: totalAmount must include VAT and must equal unitPrice * quantity.
+                # To avoid precision errors when dividing a rounded price_total by quantity, 
+                # we send quantity=1 and prepend the true quantity to the description.
+                # vatAmount MUST be exactly: totalAmount * (vatRate / (100 + vatRate)).
+                total_incl = round(line.price_total, 2)
+                
                 vat_rate_sum = sum(t.amount for t in line.tax_id)
-                # Mollie's exact formula to avoid vatAmount mismatch errors
                 if vat_rate_sum:
-                    vat_amount = round(total_excl * (vat_rate_sum / (100 + vat_rate_sum)), 2)
+                    vat_amount = round(total_incl * (vat_rate_sum / (100 + vat_rate_sum)), 2)
                 else:
                     vat_amount = 0.0
 
+                actual_qty = int(line.product_uom_qty)
+                description = f"{actual_qty}x {line.name}" if actual_qty != 1 else line.name
 
                 line_data = {
-                    'description': line.name,
-                    'quantity': qty,
+                    'description': description,
+                    'quantity': 1,
                     'unitPrice': {
                         'currency': order.currency_id.name,
-                        'value': f"{unit_price:.2f}"
+                        'value': f"{total_incl:.2f}"
                     },
                     'totalAmount': {
                         'currency': order.currency_id.name,
-                        'value': f"{total_excl:.2f}"  # ✅ unitPrice × qty, NOT price_total
+                        'value': f"{total_incl:.2f}"
                     },
                     'vatAmount': {
                         'currency': order.currency_id.name,
