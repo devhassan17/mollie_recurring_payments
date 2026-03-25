@@ -109,6 +109,20 @@ class PaymentTransaction(models.Model):
                 
                 lines.append(line_data)
             
+            if lines and 'amount' in payload and 'value' in payload['amount']:
+                # Absolute guarantee: sum of lines MUST exactly match the payment payload amount.
+                # Odoo's sum of price_total can sometimes drift by 0.01 from amount_total due to rounding.
+                expected_total = float(payload['amount']['value'])
+                lines_total = sum(float(l['totalAmount']['value']) for l in lines)
+                
+                diff = round(expected_total - lines_total, 2)
+                if diff != 0.0 and len(lines) > 0:
+                    # Apply discrepancy to the last line to perfectly balance the payload
+                    last_line = lines[-1]
+                    new_total = round(float(last_line['totalAmount']['value']) + diff, 2)
+                    last_line['totalAmount']['value'] = f"{new_total:.2f}"
+                    last_line['unitPrice']['value'] = f"{new_total:.2f}"
+            
             if lines:
                 payload['lines'] = lines
               
