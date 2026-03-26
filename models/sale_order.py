@@ -85,7 +85,7 @@ class SaleOrder(models.Model):
         return any(line.product_id.recurring_invoice for line in self.order_line)
 
     def _get_blocked_subscription_keywords(self):
-        return ["churn", "closed", "cancel", "pause", "hold", "stop"]
+        return ["churn", "closed", "cancel", "pause", "hold", "stop", "renew", "draft"]
 
     def _safe_text_contains_blocked_status(self, value):
         value = (value or "").strip().lower()
@@ -135,8 +135,8 @@ class SaleOrder(models.Model):
         # 🛑 End Date Protection: Stop if the subscription has already reached its end date
         today = fields.Date.today()
         for field_name in ["end_date", "date_end"]:
-            if field_name in self._fields and self[field_name] and self[field_name] < today:
-                _logger.info("⏭️ Subscription %s is blocked because its end date (%s) has passed.", self.name, self[field_name])
+            if field_name in self._fields and self[field_name] and self[field_name] <= today:
+                _logger.info("⏭️ Subscription %s is blocked because its end date (%s) has passed or is today.", self.name, self[field_name])
                 return True
 
         return False
@@ -151,7 +151,10 @@ class SaleOrder(models.Model):
             ("partner_id.mollie_mandate_status", "=", "valid"),
         ]
 
-        exclude_states = ["churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause"]
+        exclude_states = [
+            "churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause",
+            "renewed", "2_renewal", "4_renewed", "renewal", "draft", "1_draft"
+        ]
 
         if "subscription_state" in self._fields:
             domain += [("subscription_state", "not in", exclude_states)]
@@ -172,10 +175,10 @@ class SaleOrder(models.Model):
         if "is_closed" in self._fields:
             domain += [("is_closed", "=", False)]
 
-        # 🛑 Domain level end-date check: Ensure we don't pick up subscriptions past their end date
+        # 🛑 Domain level end-date check: Ensure we don't pick up subscriptions past or on their end date
         for field_name in ["end_date", "date_end"]:
             if field_name in self._fields:
-                domain += ["|", (field_name, "=", False), (field_name, ">=", today)]
+                domain += ["|", (field_name, "=", False), (field_name, ">", today)]
 
         return domain
 
@@ -184,9 +187,15 @@ class SaleOrder(models.Model):
             ("last_payment_id", "!=", False),
             ("plan_id", "!=", False),
             ("state", "in", ["sale", "done"]),
+            # Only poll subscriptions whose last payment is not yet in a terminal state.
+            # 'paid', 'failed', 'canceled', 'expired' are final — no need to keep checking.
+            ("mollie_last_payment_status", "not in", ["paid", "failed", "canceled", "expired"]),
         ]
 
-        exclude_states = ["churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause"]
+        exclude_states = [
+            "churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause",
+            "renewed", "2_renewal", "4_renewed", "renewal", "draft", "1_draft"
+        ]
 
         if "subscription_state" in self._fields:
             domain += [("subscription_state", "not in", exclude_states)]
@@ -298,7 +307,7 @@ class SaleOrder(models.Model):
         charged_orders = self.env["sale.order"]
         for order in orders:
             if order._is_subscription_charge_blocked():
-                order.message_post(body="⏭️ Skipped Mollie charge because subscription is churned / paused / closed.")
+                _logger.info("⏭️ Skipped Mollie charge for %s because subscription is blocked.", order.name)
                 continue
 
             # 🛑 STRICT DUPLICATION CHECK: skip if already charged for this specific next_invoice_date
@@ -475,7 +484,7 @@ class SaleOrder(models.Model):
                     if not order.mollie_last_payment_unpaid_since:
                         vals["mollie_last_payment_unpaid_since"] = now
                     # If status is terminal failure, reverse any Odoo payment already created
-                    if status in ("failed", "canceled", "expired"):
+                    if status in ("failed", "canceled", "expired") and order.mollie_last_payment_status != status:
                         order._process_mollie_payment_failure(payment_id, status)
 
                 order.sudo().write(vals)

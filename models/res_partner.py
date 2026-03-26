@@ -34,11 +34,17 @@ class ResPartner(models.Model):
                 continue
 
             data = resp.json().get("_embedded", {}).get("mandates", [])
-            _logger.info("Fetched Data %s", data)
+            _logger.debug("Fetched mandates for partner %s: %s", partner.name, data)
             valid = [m for m in data if m.get("status") == "valid"]
             if valid:
-                partner.sudo().write({"mollie_mandate_id": valid[0].get("id")})
-                partner.sudo().write({"mollie_mandate_status": valid[0].get("status")})
+                partner.sudo().write({
+                    "mollie_mandate_id": valid[0].get("id"),
+                    "mollie_mandate_status": valid[0].get("status"),
+                })
                 _logger.info("Stored valid mandate %s for %s", valid[0].get("id"), partner.name)
-                
-                self.env['res.partner'].flush_model()
+            else:
+                # Clear stale mandate so it's not re-used for charges
+                partner.sudo().write({"mollie_mandate_id": False, "mollie_mandate_status": False})
+                _logger.warning("No valid mandate found for partner %s — cleared stale mandate.", partner.name)
+
+            self.env['res.partner'].flush_model()
