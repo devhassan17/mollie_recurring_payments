@@ -366,24 +366,27 @@ class SaleOrder(models.Model):
                 order.message_post(body=f"⚠️ Mollie API exception: {str(e)}")
 
         if charged_orders:
-            _logger.info("🧾 Creating invoices for %d charged Mollie order(s)", len(charged_orders))
-            # Call standard Odoo logic to create invoices and advance next_invoice_date
-            # NOTE: We don't need to skip PDF/email here if the user hasn't explicitly asked. 
-            # If the template is broken, it's better to let Odoo fail locally so the user knows.
-            # But the user asked to "Don't Change Functionalitis", so I'll keep the safety check but make it cleaner.
-            
-            try:
-                # We only want to process the orders we just charged
-                super(SaleOrder, charged_orders)._cron_recurring_create_invoice()
-            except Exception:
-                _logger.exception("⚠️ Standard subscription invoice creation failed for charged orders")
+            _logger.info("🧾 Deferring to standard Odoo to generate invoices alongside B2B subscriptions...")
 
+        # Let standard Odoo run the exact way it usually does (unbound to any specific recordset).
+        # It will natively search for ALL due subscriptions today (both B2B and our charged Mollie ones)
+        # and create invoices for them without our module breaking the loop.
+        try:
+             res = super()._cron_recurring_create_invoice()
+        except Exception:
+             _logger.exception("⚠️ Standard subscription invoice creation failed")
+             res = False
+
+        if charged_orders:
             # Final reconciliation loop for those just charged
+            _logger.info("💰 Reconciling the newly generated invoices for Mollie orders...")
             for order in charged_orders:
-                order._reconcile_with_mollie_payment()
+                try:
+                    order._reconcile_with_mollie_payment()
+                except Exception:
+                    _logger.exception("⚠️ Failed to reconcile Mollie payment for order %s", order.name)
 
-        # Call super for any other orders not processed by Mollie logic
-        return super(SaleOrder, self.search([('id', 'not in', charged_orders.ids), ('plan_id', '!=', False)]))._cron_recurring_create_invoice()
+        return res
 
     def _reconcile_with_mollie_payment(self):
         """Helper to find the latest unpaid invoice and reconcile it with the Mollie payment."""
