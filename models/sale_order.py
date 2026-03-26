@@ -497,10 +497,8 @@ class SaleOrder(models.Model):
             _logger.info("ℹ️ No Odoo payment found for Mollie payment %s — nothing to reverse", payment_id)
             return
 
-        if not existing_payment.move_id or existing_payment.move_id.state != "posted":
-            _logger.info("ℹ️ Payment %s is not posted (state=%s) — skipping reversal",
-                         existing_payment.name,
-                         existing_payment.move_id.state if existing_payment.move_id else 'no move')
+        if existing_payment.state == 'cancel':
+            _logger.info("ℹ️ Payment %s is already cancelled — skipping reversal", existing_payment.name)
             return
 
         try:
