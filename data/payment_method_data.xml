@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="1">
+    <data noupdate="0">
         <!-- Ensure giftcard payment method exists and is linked to Mollie -->
         <record id="payment_method_mollie_gift_card" model="payment.method">
             <field name="name">Gift Card</field>
