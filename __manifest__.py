@@ -1,6 +1,6 @@
 {
     'name': 'Mollie Subscription Renewals Dashboard & Recurring Payments',
-    'version': '18.0.5.3.0',
+    'version': '18.0.5.4.0',
     'category': 'Payment',
     'author': 'Managemyweb.co',
     'website': 'https://managemyweb.co',
@@ -28,6 +28,7 @@ Key Features:
         
         'views/mollie_dashboard_views.xml',
         'views/mollie_menu.xml',
+        'views/mollie_config_settings_views.xml',
 
         'views/res_partner_views.xml',
         'views/sale_order_views.xml',

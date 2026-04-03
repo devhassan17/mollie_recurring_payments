@@ -9,4 +9,12 @@
               parent="mollie_root_menu"
               action="action_mollie_subscription_renewals"
               sequence="10"/>
+
+    <menuitem id="mollie_configuration_menu"
+              name="Configuration"
+              parent="mollie_root_menu"
+              action="action_mollie_config_settings"
+              sequence="90"
+              groups="base.group_system"/>
 </odoo>
+

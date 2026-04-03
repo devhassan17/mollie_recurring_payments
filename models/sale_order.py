@@ -141,6 +141,16 @@ class SaleOrder(models.Model):
 
         return False
 
+    def _get_mollie_recurring_company_id(self):
+        """Return the company ID configured for Mollie Recurring, or None if not set."""
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'mollie_recurring_payments.mollie_recurring_company_id'
+        )
+        try:
+            return int(param) if param else None
+        except (ValueError, TypeError):
+            return None
+
     def _mollie_subscription_base_domain(self, today=None):
         today = today or fields.Date.today()
         domain = [
@@ -150,6 +160,10 @@ class SaleOrder(models.Model):
             ("partner_id.mollie_mandate_id", "!=", False),
             ("partner_id.mollie_mandate_status", "=", "valid"),
         ]
+
+        mollie_company_id = self._get_mollie_recurring_company_id()
+        if mollie_company_id:
+            domain = [("company_id", "=", mollie_company_id)] + domain
 
         exclude_states = [
             "churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause",
@@ -191,6 +205,10 @@ class SaleOrder(models.Model):
             # 'paid', 'failed', 'canceled', 'expired' are final — no need to keep checking.
             ("mollie_last_payment_status", "not in", ["paid", "failed", "canceled", "expired"]),
         ]
+
+        mollie_company_id = self._get_mollie_recurring_company_id()
+        if mollie_company_id:
+            domain = [("company_id", "=", mollie_company_id)] + domain
 
         exclude_states = [
             "churn", "churned", "closed", "cancelled", "canceled", "done", "paused", "pause",
