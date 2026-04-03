@@ -25,10 +25,9 @@ Key Features:
     'data': [
         'security/ir.model.access.csv',
 
-        
         'views/mollie_dashboard_views.xml',
+        'views/mollie_config_settings_views.xml',  # must load before mollie_menu.xml (menu refs the action)
         'views/mollie_menu.xml',
-        'views/mollie_config_settings_views.xml',
 
         'views/res_partner_views.xml',
         'views/sale_order_views.xml',
