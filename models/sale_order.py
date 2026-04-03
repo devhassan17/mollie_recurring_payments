@@ -415,6 +415,24 @@ class SaleOrder(models.Model):
 
         return res
 
+    def _subscription_post_success_free_renewal(self):
+        """
+        Patch for Odoo Enterprise bug:
+        `_subscription_post_success_free_renewal` is internally called on a
+        multi-record set (e.g. two free subscriptions due on the same day)
+        but the method calls ensure_one(), causing:
+            ValueError: Expected singleton: sale.order(163087, 163092)
+
+        We iterate per-record so enterprise always receives exactly one record.
+        """
+        for order in self:
+            try:
+                super(SaleOrder, order)._subscription_post_success_free_renewal()
+            except Exception:
+                _logger.exception(
+                    "⚠️ _subscription_post_success_free_renewal failed for order %s", order.name
+                )
+
     def _reconcile_with_mollie_payment(self):
         """Helper to find the latest unpaid invoice and reconcile it with the Mollie payment."""
         self.ensure_one()
