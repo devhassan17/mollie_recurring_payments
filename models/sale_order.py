@@ -382,7 +382,7 @@ class SaleOrder(models.Model):
                     "last_payment_id": payment_id,
                     "mollie_last_payment_status": status,
                     "mollie_last_payment_checked_at": fields.Datetime.now(),
-                    "mollie_last_payment_paid": True if status in ("paid", "authorized", "pending") else False,
+                    "mollie_last_payment_paid": True if status in ("paid", "authorized") else False,
                 })
                 
                 order.message_post(body=f"✅ Mollie Subscription Payment Initiated. ID: <b>{payment_id}</b> | Status: <b>{status}</b>")
@@ -405,13 +405,22 @@ class SaleOrder(models.Model):
              res = False
 
         if charged_orders:
-            # Final reconciliation loop for those just charged
+            # Final reconciliation loop for those just charged.
+            # Each order gets its own savepoint so that a serialization failure (e.g. a
+            # concurrent "Refresh Payment Status" cron touching the same account_move rows)
+            # only rolls back *that one order* and does not poison the entire transaction,
+            # allowing subsequent orders to be reconciled successfully.
             _logger.info("💰 Reconciling the newly generated invoices for Mollie orders...")
             for order in charged_orders:
                 try:
-                    order._reconcile_with_mollie_payment()
+                    with self.env.cr.savepoint():
+                        order._reconcile_with_mollie_payment()
                 except Exception:
-                    _logger.exception("⚠️ Failed to reconcile Mollie payment for order %s", order.name)
+                    _logger.exception(
+                        "⚠️ Failed to reconcile Mollie payment for order %s — "
+                        "savepoint rolled back; other orders are unaffected.",
+                        order.name,
+                    )
 
         return res
 
@@ -486,9 +495,9 @@ class SaleOrder(models.Model):
                 data = resp.json() if resp.content else {}
                 status = data.get("status")
                 
-                # SEPA Direct Debits (esp. in test mode) are often 'pending' for several days
-                # We consider them successful in Odoo if they are paid, authorized, or pending
-                paid = True if status in ("paid", "authorized", "pending") else False
+                # SEPA Direct Debits (esp. in test mode) are often 'pending' for several days.
+                # We now ONLY consider them successful when they are fully 'paid' or 'authorized'.
+                paid = True if status in ("paid", "authorized") else False
                 now = fields.Datetime.now()
 
                 amount_value = 0.0
