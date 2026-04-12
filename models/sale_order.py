@@ -382,10 +382,10 @@ class SaleOrder(models.Model):
                     "last_payment_id": payment_id,
                     "mollie_last_payment_status": status,
                     "mollie_last_payment_checked_at": fields.Datetime.now(),
-                    "mollie_last_payment_paid": True if status in ("paid", "authorized") else False,
+                    "mollie_last_payment_paid": True if status in ("paid", "authorized", "pending") else False,
                 })
                 
-                order.message_post(body=f"✅ Mollie Subscription Payment Initiated. ID: <b>{payment_id}</b> | Status: <b>{status}</b>")
+                order.message_post(body=f"✅ Mollie Subscription Payment Initiated. ID: {payment_id} | Status: {status}")
                 charged_orders |= order
 
             except Exception as e:
@@ -479,6 +479,7 @@ class SaleOrder(models.Model):
             if not payment_id:
                 continue
 
+            old_status = order.mollie_last_payment_status
             try:
                 resp = order._mollie_api_request(
                     method="GET",
@@ -496,8 +497,8 @@ class SaleOrder(models.Model):
                 status = data.get("status")
                 
                 # SEPA Direct Debits (esp. in test mode) are often 'pending' for several days.
-                # We now ONLY consider them successful when they are fully 'paid' or 'authorized'.
-                paid = True if status in ("paid", "authorized") else False
+                # We consider them successful in Odoo if they are paid, authorized, or pending
+                paid = True if status in ("paid", "authorized", "pending") else False
                 now = fields.Datetime.now()
 
                 amount_value = 0.0
@@ -525,6 +526,12 @@ class SaleOrder(models.Model):
                 if paid:
                     vals["mollie_last_payment_unpaid_since"] = False
                     order._process_mollie_payment_success(payment_id, amount_value)
+
+                    if old_status == 'pending' and status in ('paid', 'authorized'):
+                        # Post manual message since it didn't ping during 'pending' registration
+                        invoice = order.invoice_ids.filtered(lambda i: i.state == 'posted').sorted('id', reverse=True)[:1]
+                        inv_name = invoice.name if invoice else "Invoice"
+                        order.message_post(body=f"✅ Mollie payment {payment_id} has cleared. {inv_name} is now fully paid.")
                 else:
                     if not order.mollie_last_payment_unpaid_since:
                         vals["mollie_last_payment_unpaid_since"] = now
@@ -564,9 +571,9 @@ class SaleOrder(models.Model):
             _logger.info("🔄 Payment %s cancelled/reversed for Mollie payment %s (status=%s)",
                          existing_payment.name, payment_id, status)
             self.message_post(
-                body=f"🔴 Mollie payment <b>{payment_id}</b> was <b>{status}</b>.<br/>"
-                     f"Odoo payment <b>{existing_payment.name}</b> has been reversed.<br/>"
-                     f"Invoice is back to <b>Not Paid</b> — please retry or contact customer."
+                body=f"🔴 Mollie payment {payment_id} was {status}.\n"
+                     f"Odoo payment {existing_payment.name} has been reversed.\n"
+                     f"Invoice is back to Not Paid — please retry or contact customer."
             )
         except Exception:
             _logger.exception("❌ Failed to reverse Odoo payment %s for Mollie payment %s",
@@ -643,7 +650,15 @@ class SaleOrder(models.Model):
                 'journal_id': journal.id,
                 'payment_method_line_id': payment_method_line.id,
             })
+            
+            existing_msg_ids = self.message_ids.ids
             payments = payment_register._create_payments()
+
+            if self.mollie_last_payment_status == 'pending':
+                new_msgs = self.message_ids.filtered(lambda m: m.id not in existing_msg_ids)
+                for msg in new_msgs:
+                    if msg.body and 'paid' in str(msg.body).lower() and 'invoice' in str(msg.body).lower():
+                        msg.sudo().unlink()
 
             # Tag the created payment(s) with the Mollie payment ID for future deduplication
             if payments:
