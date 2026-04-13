@@ -93,7 +93,7 @@ class SaleOrder(models.Model):
         return any(line.product_id.recurring_invoice for line in self.order_line)
 
     def _get_blocked_subscription_keywords(self):
-        return ["churn", "closed", "cancel", "pause", "hold", "stop", "renew", "draft"]
+        return ["churn", "closed", "cancel", "pause", "hold", "stop", "renew", "renewed", "draft"]
 
     def _safe_text_contains_blocked_status(self, value):
         value = (value or "").strip().lower()
