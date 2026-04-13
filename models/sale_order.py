@@ -77,6 +77,14 @@ class SaleOrder(models.Model):
         index=True,
     )
 
+    mollie_last_charged_date = fields.Date(
+        string="Last Charged Renewal Date",
+        readonly=True,
+        index=True,
+        help="The specific renewal date (next_invoice_date) that was last successfully submitted to Mollie."
+    )
+
+
     # -------------------------------------------------------------------------
     # Helpers
     # -------------------------------------------------------------------------
@@ -328,11 +336,10 @@ class SaleOrder(models.Model):
                 _logger.info("⏭️ Skipped Mollie charge for %s because subscription is blocked.", order.name)
                 continue
 
-            # 🛑 STRICT DUPLICATION CHECK: skip if already charged for this specific next_invoice_date
-            # We use last_payment_id and a time-based check (or metadata check)
-            if order.last_payment_id and order.mollie_last_payment_checked_at:
-                # If we already checked status today and it's not a failure, be cautious
-                if order.mollie_last_payment_checked_at.date() == today and order.mollie_last_payment_status not in ('failed', 'canceled', 'expired'):
+            # 🛑 STRICT DUPLICATION CHECK: skip if already charged for this specific next_invoice_date (today)
+            if order.mollie_last_charged_date == today:
+                # If we already charged today and it's not a failure, be cautious
+                if order.mollie_last_payment_status not in ('failed', 'canceled', 'expired'):
                     _logger.warning("⏭️ Order %s potentially already processed today (%s). Skipping to prevent duplication.", order.name, order.last_payment_id)
                     continue
 
@@ -382,6 +389,7 @@ class SaleOrder(models.Model):
                     "last_payment_id": payment_id,
                     "mollie_last_payment_status": status,
                     "mollie_last_payment_checked_at": fields.Datetime.now(),
+                    "mollie_last_charged_date": today,
                     "mollie_last_payment_paid": True if status in ("paid", "authorized", "pending") else False,
                 })
                 
