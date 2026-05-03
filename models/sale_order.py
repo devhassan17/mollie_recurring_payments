@@ -498,7 +498,7 @@ class SaleOrder(models.Model):
                 )
                 if not resp or resp.status_code != 200:
                     text = resp.text if resp else "No response"
-                    order.message_post(body=f"⚠️ Mollie status fetch failed for {payment_id}: {text}")
+                    _logger.warning("⚠️ Mollie status fetch failed for %s: %s", payment_id, text)
                     continue
 
                 data = resp.json() if resp.content else {}
@@ -550,8 +550,7 @@ class SaleOrder(models.Model):
                 order.sudo().write(vals)
 
             except Exception as e:
-                _logger.exception("⚠️ Mollie status exception for order %s", order.name)
-                order.message_post(body=f"⚠️ Mollie status exception: {e}")
+                _logger.exception("⚠️ Mollie status exception for order %s: %s", order.name, e)
 
     def _process_mollie_payment_failure(self, payment_id, status):
         """
