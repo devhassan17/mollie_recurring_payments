@@ -374,9 +374,9 @@ class SaleOrder(models.Model):
                     headers=headers,
                     idempotency_key=idempotency_key
                 )
-                data = response.json() if response and response.content else {}
+                data = response.json() if response is not None and response.content else {}
 
-                if not response or response.status_code not in (200, 201):
+                if response is None or response.status_code not in (200, 201):
                     # 409 Conflict might happen if idempotency key is reused but payload differs (unlikely here)
                     order.message_post(body=f"❌ Mollie payment failed: {data.get('detail', data)}")
                     _logger.error("❌ Mollie payment failed for %s: %s", order.name, data)
@@ -470,19 +470,21 @@ class SaleOrder(models.Model):
     # -------------------------------------------------------------------------
     # Manual + webhook + cron refresh payment status
     # -------------------------------------------------------------------------
-    def action_refresh_last_mollie_payment_status(self):
-        """Fetch last payment status from Mollie and apply accounting when paid."""
-        mollie_provider = self.env["payment.provider"].search([("code", "=", "mollie")], limit=1)
-        api_key = getattr(mollie_provider, "mollie_api_key", False)
-        if not api_key:
-            return
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
         for order in self:
+            mollie_provider = self.env["payment.provider"].search([
+                ("code", "=", "mollie"),
+                ("company_id", "=", order.company_id.id)
+            ], limit=1)
+            api_key = getattr(mollie_provider, "mollie_api_key", False)
+            if not api_key:
+                _logger.warning("❌ Mollie API key missing for order %s (Company: %s)", order.name, order.company_id.name)
+                continue
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+
             payment_id = order.last_payment_id
             if not payment_id:
                 continue
@@ -496,9 +498,10 @@ class SaleOrder(models.Model):
                     timeout=15,
                     max_retries=3,
                 )
-                if not resp or resp.status_code != 200:
-                    text = resp.text if resp else "No response"
-                    _logger.warning("⚠️ Mollie status fetch failed for %s: %s", payment_id, text)
+                if resp is None or resp.status_code != 200:
+                    text = resp.text if resp is not None else "No response"
+                    status_code = resp.status_code if resp is not None else "N/A"
+                    _logger.warning("⚠️ Mollie status fetch failed for %s (Status %s): %s", payment_id, status_code, text)
                     continue
 
                 data = resp.json() if resp.content else {}
