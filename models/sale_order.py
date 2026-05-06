@@ -3,6 +3,7 @@ from odoo import models, api, fields
 import requests
 import logging
 import time
+import datetime
 from dateutil import parser as date_parser
 
 _logger = logging.getLogger(__name__)
@@ -207,15 +208,15 @@ class SaleOrder(models.Model):
     def _mollie_subscription_status_refresh_domain(self):
         domain = [
             ("last_payment_id", "!=", False),
-            ("plan_id", "!=", False),
             ("state", "in", ["sale", "done"]),
-            # Only poll subscriptions whose last payment is not yet in a terminal state.
-            # We also poll 'paid' orders if the amount is 0.0, to fix missing data from failed syncs.
+            # Poll if status is not terminal (pending/authorized/etc)
+            # OR if it's paid but amount is missing
+            # OR if it was checked very recently (allows users to see the "checked at" update for 24h)
             "|",
                 ("mollie_last_payment_status", "not in", ["paid", "failed", "canceled", "expired"]),
-                "&",
-                    ("mollie_last_payment_status", "=", "paid"),
-                    ("mollie_last_payment_amount", "=", 0.0),
+                "|",
+                    ("&", ("mollie_last_payment_status", "=", "paid"), ("mollie_last_payment_amount", "=", 0.0)),
+                    ("mollie_last_payment_checked_at", ">", fields.Datetime.now() - datetime.timedelta(days=1)),
         ]
 
         mollie_company_id = self._get_mollie_recurring_company_id()
