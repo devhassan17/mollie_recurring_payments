@@ -388,6 +388,7 @@ class SaleOrder(models.Model):
                 order.sudo().write({
                     "last_payment_id": payment_id,
                     "mollie_last_payment_status": status,
+                    "mollie_last_payment_amount": amount,
                     "mollie_last_payment_checked_at": fields.Datetime.now(),
                     "mollie_last_charged_date": today,
                     "mollie_last_payment_paid": True if status in ("paid", "authorized", "pending") else False,
@@ -513,10 +514,10 @@ class SaleOrder(models.Model):
                 paid = True if status in ("paid", "authorized", "pending") else False
                 now = fields.Datetime.now()
 
-                amount_value = 0.0
+                amount_data = data.get("amount") or {}
                 try:
-                    amount_value = float((data.get("amount") or {}).get("value") or 0.0)
-                except Exception:
+                    amount_value = float(amount_data.get("value") or 0.0)
+                except (ValueError, TypeError):
                     amount_value = 0.0
 
                 paid_at = False
