@@ -215,7 +215,7 @@ class SaleOrder(models.Model):
             "|",
                 ("mollie_last_payment_status", "not in", ["paid", "failed", "canceled", "expired"]),
                 "|",
-                    ("&", ("mollie_last_payment_status", "=", "paid"), ("mollie_last_payment_amount", "=", 0.0)),
+                    "&", ("mollie_last_payment_status", "=", "paid"), ("mollie_last_payment_amount", "=", 0.0),
                     ("mollie_last_payment_checked_at", ">", fields.Datetime.now() - datetime.timedelta(days=1)),
         ]
 
