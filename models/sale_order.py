@@ -213,7 +213,9 @@ class SaleOrder(models.Model):
             # We also poll 'paid' orders if the amount is 0.0, to fix missing data from failed syncs.
             "|",
                 ("mollie_last_payment_status", "not in", ["paid", "failed", "canceled", "expired"]),
-                ("&", ("mollie_last_payment_status", "=", "paid"), ("mollie_last_payment_amount", "=", 0.0)),
+                "&",
+                    ("mollie_last_payment_status", "=", "paid"),
+                    ("mollie_last_payment_amount", "=", 0.0),
         ]
 
         mollie_company_id = self._get_mollie_recurring_company_id()
