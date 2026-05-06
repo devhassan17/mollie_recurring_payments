@@ -470,6 +470,7 @@ class SaleOrder(models.Model):
     # -------------------------------------------------------------------------
     # Manual + webhook + cron refresh payment status
     # -------------------------------------------------------------------------
+    def action_refresh_last_mollie_payment_status(self):
         for order in self:
             mollie_provider = self.env["payment.provider"].search([
                 ("code", "=", "mollie"),
