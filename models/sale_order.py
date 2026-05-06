@@ -210,8 +210,10 @@ class SaleOrder(models.Model):
             ("plan_id", "!=", False),
             ("state", "in", ["sale", "done"]),
             # Only poll subscriptions whose last payment is not yet in a terminal state.
-            # 'paid', 'failed', 'canceled', 'expired' are final — no need to keep checking.
-            ("mollie_last_payment_status", "not in", ["paid", "failed", "canceled", "expired"]),
+            # We also poll 'paid' orders if the amount is 0.0, to fix missing data from failed syncs.
+            "|",
+                ("mollie_last_payment_status", "not in", ["paid", "failed", "canceled", "expired"]),
+                ("&", ("mollie_last_payment_status", "=", "paid"), ("mollie_last_payment_amount", "=", 0.0)),
         ]
 
         mollie_company_id = self._get_mollie_recurring_company_id()
