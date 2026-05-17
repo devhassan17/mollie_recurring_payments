@@ -1,168 +1,132 @@
-# Mollie Recurring Payments for Odoo 18
+# Mollie Subscription Renewals & Recurring Payments (Odoo 18)
 
-This module enables recurring payments with Mollie iDEAL for subscription products in Odoo. It provides seamless integration between Odoo's subscription management and Mollie's payment system.
+[![Odoo Version](https://img.shields.io/badge/Odoo-18.0--Enterprise%2FCommunity-7C7BAD.svg?style=flat-square&logo=odoo)](https://www.odoo.com/)
+[![License](https://img.shields.io/badge/License-LGPL--3-blue.svg?style=flat-square)](https://www.gnu.org/licenses/lgpl-3.0.html)
+[![Mollie API](https://img.shields.io/badge/Mollie%20API-v2-FF5C2B.svg?style=flat-square)](https://docs.mollie.com/)
 
-## Features
+An enterprise-grade, highly automated Odoo 18 module that handles recurring subscription billing via the **Mollie Gateway**. 
 
-- 🔄 Automatic subscription payment processing
-- 💳 Mollie iDEAL integration for first-time and recurring payments
-- 📝 Mandate management for recurring payments
-- 👤 Customer synchronization between Odoo and Mollie
-- ⏱️ Configurable subscription intervals (Monthly, Bi-monthly)
-- 🔔 Real-time webhook notifications for payment status
-- 📊 Payment status tracking and history
+This module intercepts Odoo's native subscription schedules, charges customers using stored payment mandates, and uses a savepoint-protected native payment registry to reconcile accounting ledgers automatically.
 
-## Dependencies
+---
 
-- base
-- contacts
-- sale_management
-- website_sale
-- payment_mollie
-- sale_subscription
-- sale
+## 🌟 Key Features
 
-## Installation
+* **🔄 Automatic Subscription Interception**: Connects directly with Odoo's native invoice cron job to process payments automatically for subscriptions that are due.
+* **💳 Seamless Mandate Management**: Storing and validating Mollie customer (`cst_XXXX`) and direct debit mandate (`mdt_XXXX`) IDs directly on customer contact profiles.
+* **🛡️ Strict Idempotency Controls**: Generates unique idempotency keys (`mollie-charge-{order_id}-{date}`) for all API transactions to prevent duplicate charges.
+* **⚡ Intelligent Accounting & Auto-Reconcile**: Generates and posts draft invoices upon payment success, reconciling them using Odoo's native payment register wizard.
+* **🚨 Automated Payment Reversals**: Monitors asynchronous transactions (like SEPA Direct Debit) and automatically reverses registered payments and resets invoices to unpaid if the payment subsequently fails on Mollie.
+* **🎁 Smart B2B Voucher Support**: Maps product categories to Mollie voucher types (Eco, Meal, Gift, Sport, Holiday) with precision adjustments to avoid tax rounding discrepancies.
+* **📊 Live Subscriptions Dashboard**: A visual overview of upcoming renewals, active mandates, and transaction status codes.
 
-1. Install the official Mollie payment module (payment_mollie)
-2. Install this module (mollie_recurring_payments)
-3. Configure your Mollie API keys in Odoo
-4. Set up subscription products
+---
 
-## Configuration
+## 📖 Table of Contents
 
-### Mollie Setup
+1. [System Dependencies](#-system-dependencies)
+2. [Installation Guide](#%EF%B8%8F-installation-guide)
+3. [Configuration](#%EF%B8%8F-configuration)
+   * [1. Mollie Provider Configuration](#1-mollie-provider-configuration)
+   * [2. Subscription Configuration](#2-subscription-configuration)
+   * [3. Company-Level Isolation](#3-company-level-isolation)
+   * [4. B2B Voucher & Gift Card Mapping](#4-b2b-voucher--gift-card-mapping)
+4. [How It Works (Cron & Scheduled Actions)](#-how-it-works-cron--scheduled-actions)
+5. [Technical Blueprint & Deep-Dive](#%EF%B8%8F-technical-blueprint--deep-dive)
+6. [Running Unit Tests](#-running-unit-tests)
+7. [License](#-license)
 
-1. Configure your Mollie API keys in the Payment Provider settings:
-   - Go to Accounting/Invoicing → Configuration → Payment Providers
-   - Select or create Mollie provider
-   - Enter your API keys (test and/or production)
-   - In Mollie Settings Enable SEPA Direct Debit,
+---
 
-### Subscription Products
+## 🔌 System Dependencies
 
-1. Create or modify products:
-   - Enable "Recurring Invoice" on products that should be subscription-based
-   - Set up subscription plans (Monthly, Bi-monthly)
+This module is designed for Odoo 18 (Enterprise or Community) and requires the following modules:
+* `base`
+* `contacts`
+* `sale`
+* `sale_management`
+* `website_sale`
+* `payment_mollie` (Odoo's official Mollie provider extension)
+* `sale_subscription` (Odoo Subscriptions core)
+* `account` (Odoo Accounting/Invoicing engine)
+* `marketing_automation`
 
-### Cron Jobs
+---
 
-The module automatically installs a daily cron job for processing subscription payments:
-- Name: "Mollie: Process Subscription Charges"
-- Interval: Daily
-- Model: mollie.subscription.cron
+## 🛠️ Installation Guide
 
-## Features in Detail
+1. **Deploy Module Files**: Copy the `mollie_recurring_payments` directory into your Odoo custom addons directory.
+2. **Restart Odoo**: Restart your Odoo server instance to register the custom path.
+3. **Update Apps List**: Log in as Administrator, activate Developer Mode, navigate to **Apps**, and click **Update Apps List**.
+4. **Install Module**: Search for `Mollie Subscription Renewals Dashboard & Recurring Payments` and click **Install**.
 
-### Customer Management
+---
 
-- Automatic creation of Mollie customers
-- Syncing of customer data between Odoo and Mollie
-- Storage of Mollie customer IDs and mandate information
+## ⚙️ Configuration
 
-### Mandate Handling
+### 1. Mollie Provider Configuration
+To link your Odoo instance with Mollie:
+1. Go to **Accounting / Invoicing** ➔ **Configuration** ➔ **Payment Providers**.
+2. Select **Mollie**.
+3. Set the state to **Test Mode** or **Enabled**.
+4. Under the **Credentials** tab, enter your Mollie **API Key**.
+5. Enable **SEPA Direct Debit** and **iDEAL** payment methods in your Mollie Dashboard (SEPA is required for subsequent automated recurring charges).
 
-- Automatic mandate creation for first payments
-- Mandate status tracking
-- Manual mandate synchronization option
+### 2. Subscription Configuration
+1. Go to **Subscriptions** (or Sales) and create subscription products.
+2. Ensure **Recurring Invoice** is enabled on the product template.
+3. Set up your recurring plans (e.g. Monthly, Bi-monthly).
 
-### Payment Processing
+### 3. Company-Level Isolation
+If you operate in a multi-company Odoo environment, you can isolate recurring charges to a single company:
+1. Go to **Mollie** (root menu) ➔ **Configuration**.
+2. Set the **Active Company** field.
+3. Once configured, the recurring charge crons and status fetches will only process subscriptions belonging to the selected company, preventing cross-company interference.
 
-- First payment handled via iDEAL
-- Subsequent payments processed automatically
-- Payment status tracking and error handling
-- Webhook integration for real-time updates
+### 4. B2B Voucher & Gift Card Mapping
+If you accept meal vouchers, eco-cheques, or gift cards:
+1. Go to **Accounting / Invoicing** ➔ **Configuration** ➔ **Payment Providers** ➔ **Mollie**.
+2. Under the **Voucher Configuration** tab, check **Mollie: Use Vouchers**.
+3. Add lines to map your Odoo **Product Categories** to corresponding **Mollie Voucher Types** (Eco, Meal, Gift, Sport Culture, Holiday).
 
-### Views and Interface
+---
 
-- Enhanced sale order form with mandate information
-- Customer form with Mollie mandate details
-- Payment status tracking in orders
+## ⏱️ How It Works (Cron & Scheduled Actions)
 
-## Usage
+The module automates recurring billing using Odoo's scheduled actions:
 
-### Creating a Subscription
+1. **Native Subscription Cron (`_cron_recurring_create_invoice`)**:
+   * Runs daily to locate subscription sales orders that are due for billing today.
+   * If a valid customer mandate is found, it automatically charges the customer's account using the stored Mollie mandate.
+   * After capturing the payment, it hands control back to Odoo to generate the invoice lines and registers the payment automatically.
+2. **Mollie Status Refresh Cron (`cron_mollie_refresh_last_payment_status`)**:
+   * Runs every **5 minutes**.
+   * Pulls real-time transaction updates for all active, non-terminal payments (like pending SEPA Direct Debits) from Mollie's servers.
+   * Registers payments in Odoo once cleared, or automatically reverses them if they fail or expire.
 
-1. Create a sale order with subscription products
-2. Confirm the order
-3. Customer completes first payment via iDEAL
-4. Mandate is automatically created and stored
-5. Future payments are processed automatically
+---
 
-### Managing Mandates
+## 🏗️ Technical Blueprint & Deep-Dive
 
-- View mandate status in customer form
-- Manually sync mandates using the "Sync Mandate" button
-- Track mandate status in sale orders
+For a complete look at the underlying architecture, data models, workflows, and technical design decisions (including idempotency controls, rate limiting, and voucher tax rounding corrections), please refer to our detailed technical guide:
 
-### Monitoring Payments
+👉 **[TECHNICAL_DOCUMENTATION.md](file:///Users/alihassan/Documents/Github/mollie_recurring_payments/TECHNICAL_DOCUMENTATION.md)**
 
-- View payment history in sale orders
-- Check payment status via Mollie dashboard
-- Monitor subscription payment cron job logs
+---
 
-## Technical Details
+## 🧪 Running Unit Tests
 
-### Models
+The module includes comprehensive unit tests in the `/tests` directory to verify the payment and reconciliation processes.
 
-- `res.partner`: Enhanced with Mollie customer and mandate fields
-- `sale.order`: Added subscription and payment tracking fields
-- `payment.transaction`: For Auto Replacing Mollie's Official Function for mandate creation support 
-- `mollie.subscription.cron`: Handles recurring payment processing
+To run the test suite locally:
+```bash
+./odoo-bin -c <odoo_config_file> -i mollie_recurring_payments --test-tags=post_install,at_install
+```
 
-### Controllers
+---
 
-- Webhook handler for Mollie notifications
-- Return URL handler for payment flow
-- Mandate creation and validation endpoints
+## 📄 License
 
-### Cron Jobs
+This module is licensed under the **LGPL-3** license. 
 
-- Daily subscription payment processor
-- Configurable payment intervals
-- Error handling and logging
-
-## Error Handling
-
-The module includes comprehensive error handling:
-- Payment processing errors
-- API communication issues
-- Mandate validation failures
-- Customer creation problems
-
-All errors are logged and visible in:
-- Odoo system logs
-- Order chatter messages
-- Customer form notifications
-
-## Security
-
-- Secure API key handling
-- Protected webhook endpoints
-- Proper authentication for sensitive operations
-- Role-based access control
-
-## Support
-
-For issues and feature requests, please create an issue in the repository.
-
-## License
-
-This module is licensed under the LGPL-3.
-
-## Version History
-
-### 1.5 (Current)
-- Added enhanced error handling
-- Improved mandate synchronization
-- Fixed webhook processing
-- Added payment status tracking
-
-## Future Improvements
-
-- Multi-currency support
-- Advanced retry logic for failed payments
-- Enhanced reporting capabilities
-- More subscription interval options
-
-
+Developed and maintained by **[Managemyweb.co](https://managemyweb.co)** (Maintainer: `ali@moyeecoffee.com`).
