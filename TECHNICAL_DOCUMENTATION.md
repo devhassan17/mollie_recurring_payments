@@ -88,31 +88,6 @@ The module orchestrates three main workflows to automate subscription billing.
 ### 3.1. First Payment & Mandate Capture Workflow
 When a customer purchases a subscription product online, their first payment creates a customer ID and registers a payment mandate on Mollie's servers.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Customer
-    participant Storefront as Odoo Website Shop
-    participant Odoo as Odoo Backend (server)
-    participant Mollie as Mollie Gateway
-
-    Customer->>Storefront: Add subscription to cart & checkout
-    Storefront->>Odoo: Confirm order & prepare payment
-    Note over Odoo: PaymentTransaction._mollie_prepare_payment_request_payload()
-    Odoo->>Mollie: Create customer (if missing) & request checkout url (sequenceType=first)
-    Mollie-->>Odoo: Return transaction payload & redirect url
-    Odoo-->>Storefront: Redirect customer
-    Customer->>Mollie: Completes first payment (iDEAL, Credit Card, etc.)
-    Mollie-->>Customer: Redirect back to Odoo Return URL (/shop/confirmation)
-    
-    Note over Mollie: Mandate Created / Updated
-    Mollie->>Odoo: Webhook POST: /mollie/mandate/webhook (payload: payment id)
-    activate Odoo
-    Odoo->>Mollie: GET /v2/payments/{payment_id}
-    Mollie-->>Odoo: Return customerId, mandate link status
-    Odoo->>Odoo: Write mollie_mandate_id & status='valid' to res.partner
-    deactivate Odoo
-```
 
 ### 3.2. Automated Recurring Charges Workflow
 Running daily, this cron processes payments for subscription products that are due, then bills and reconciles them.
